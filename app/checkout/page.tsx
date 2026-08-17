@@ -61,6 +61,12 @@ export default function CheckoutPage() {
             email: form.email,
             phone: form.phone,
             cpfCnpj: form.cpfCnpj || undefined,
+            address: form.street,
+            addressNumber: form.number,
+            complement: form.complement || undefined,
+            province: form.neighborhood || undefined,
+            postalCode: form.cep,
+            city: form.city || undefined,
           },
         }),
       });
@@ -71,7 +77,6 @@ export default function CheckoutPage() {
         throw new Error(data.error || "Erro ao criar pagamento");
       }
 
-      // Limpa o carrinho e redireciona para o Asaas
       clearCart();
       window.location.href = data.link;
     } catch (err) {
@@ -95,7 +100,6 @@ export default function CheckoutPage() {
       <form onSubmit={handleCheckout}>
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
-            {/* Dados do cliente */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <h2 className="font-semibold text-lg mb-4">Seus dados</h2>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -153,14 +157,16 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* Endereço */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
-              <h2 className="font-semibold text-lg mb-4">Endereço de entrega</h2>
+              <h2 className="font-semibold text-lg mb-4">Endereço de entrega *</h2>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    CEP *
+                  </label>
                   <input
                     type="text"
+                    required
                     value={form.cep}
                     onChange={(e) => updateField("cep", e.target.value)}
                     className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -168,9 +174,12 @@ export default function CheckoutPage() {
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Rua</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rua *
+                  </label>
                   <input
                     type="text"
+                    required
                     value={form.street}
                     onChange={(e) => updateField("street", e.target.value)}
                     className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -178,9 +187,12 @@ export default function CheckoutPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Número *
+                  </label>
                   <input
                     type="text"
+                    required
                     value={form.number}
                     onChange={(e) => updateField("number", e.target.value)}
                     className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -188,7 +200,9 @@ export default function CheckoutPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Complemento</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Complemento
+                  </label>
                   <input
                     type="text"
                     value={form.complement}
@@ -198,7 +212,9 @@ export default function CheckoutPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Bairro</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Bairro
+                  </label>
                   <input
                     type="text"
                     value={form.neighborhood}
@@ -208,7 +224,9 @@ export default function CheckoutPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Cidade
+                  </label>
                   <input
                     type="text"
                     value={form.city}
@@ -221,7 +239,6 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Resumo */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl border border-gray-100 p-6 sticky top-24">
               <h2 className="font-semibold text-lg mb-4">Seu pedido</h2>

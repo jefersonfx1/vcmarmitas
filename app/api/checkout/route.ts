@@ -15,6 +15,12 @@ type CheckoutBody = {
     email: string;
     phone: string;
     cpfCnpj?: string;
+    address?: string;
+    addressNumber?: string;
+    complement?: string;
+    province?: string;
+    postalCode?: string;
+    city?: string;
   };
 };
 
@@ -24,15 +30,19 @@ export async function POST(req: NextRequest) {
     const { items, customer } = body;
 
     if (!items?.length) {
-      return NextResponse.json(
-        { error: "Carrinho vazio" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
     }
 
     if (!customer?.name || !customer?.email) {
       return NextResponse.json(
         { error: "Dados do cliente incompletos" },
+        { status: 400 }
+      );
+    }
+
+    if (!customer?.address || !customer?.addressNumber || !customer?.postalCode) {
+      return NextResponse.json(
+        { error: "Preencha o endereço completo (rua, número e CEP)" },
         { status: 400 }
       );
     }
@@ -62,6 +72,25 @@ export async function POST(req: NextRequest) {
       externalReference: item.id,
     }));
 
+    const customerData: Record<string, string | number | undefined> = {
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone?.replace(/\D/g, "") || undefined,
+      cpfCnpj: customer.cpfCnpj?.replace(/\D/g, "") || undefined,
+      address: customer.address,
+      addressNumber: customer.addressNumber,
+      complement: customer.complement || undefined,
+      province: customer.province || undefined,
+      postalCode: customer.postalCode?.replace(/\D/g, "") || undefined,
+    };
+
+    // Remove campos undefined
+    Object.keys(customerData).forEach((key) => {
+      if (customerData[key] === undefined || customerData[key] === "") {
+        delete customerData[key];
+      }
+    });
+
     const payload = {
       billingTypes: ["PIX", "CREDIT_CARD"],
       chargeTypes: ["DETACHED"],
@@ -73,12 +102,7 @@ export async function POST(req: NextRequest) {
         expiredUrl: `${siteUrl}/pedido/expirado`,
       },
       items: asaasItems,
-      customerData: {
-        name: customer.name,
-        email: customer.email,
-        phone: customer.phone?.replace(/\D/g, "") || undefined,
-        cpfCnpj: customer.cpfCnpj?.replace(/\D/g, "") || undefined,
-      },
+      customerData,
     };
 
     const response = await fetch(`${baseUrl}/checkouts`, {
@@ -106,7 +130,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // A API retorna id e link (ou montamos o link)
     const checkoutId = data.id;
     const link =
       data.link ||
