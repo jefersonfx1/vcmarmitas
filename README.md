@@ -17,9 +17,10 @@ Site de vendas de marmitas congeladas com área logada, checkout (Asaas), cardá
 - [x] Carrinho de compras (persistente)
 - [x] Checkout (formulário + esqueleto Asaas)
 - [x] Área do cliente (esqueleto)
+- [x] **Painel Admin de pedidos** (com edição de status)
 - [ ] Integração Asaas (pagamento real)
 - [ ] Login / Cadastro (Supabase Auth)
-- [ ] Painel Admin de pedidos
+- [ ] Persistência real de pedidos no banco
 - [ ] Gerenciamento de produtos no admin
 
 ## Como rodar localmente
@@ -30,6 +31,18 @@ npm run dev
 ```
 
 Abra [http://localhost:3000](http://localhost:3000).
+
+### Páginas principais
+
+| Rota | Descrição |
+|------|-----------|
+| `/` | Página inicial |
+| `/cardapio` | Cardápio com filtros |
+| `/carrinho` | Carrinho de compras |
+| `/checkout` | Finalizar pedido |
+| `/conta` | Área do cliente |
+| `/admin` | Painel de pedidos |
+| `/sobre` | Sobre a loja |
 
 ## Variáveis de ambiente
 
@@ -53,4 +66,5 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 1. Configurar Supabase (auth + tabelas de pedidos/produtos)
 2. Integrar Asaas Checkout / cobranças
-3. Criar painel admin (`/admin`) com listagem e edição de pedidos
+3. Proteger a rota `/admin` com autenticação
+4. Permitir cadastro/edição de marmitas pelo admin
