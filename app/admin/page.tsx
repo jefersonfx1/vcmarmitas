@@ -146,7 +146,13 @@ export default function AdminPage() {
           <h1 className="text-3xl font-bold text-gray-900">Painel Admin</h1>
           <p className="text-gray-600 mt-1">Gerencie os pedidos da loja</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/admin/produtos"
+            className="text-sm font-medium text-primary-600 hover:underline"
+          >
+            Sabores / Produtos
+          </Link>
           <button
             onClick={loadOrders}
             className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-primary-600"
@@ -155,7 +161,7 @@ export default function AdminPage() {
             Atualizar
           </button>
           <Link href="/" className="text-sm text-primary-600 hover:underline">
-            ← Voltar à loja
+            ← Loja
           </Link>
         </div>
       </div>
