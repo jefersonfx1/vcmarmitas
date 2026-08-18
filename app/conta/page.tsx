@@ -20,6 +20,20 @@ type Profile = {
   is_admin: boolean;
 };
 
+type OrderItem = {
+  product_name: string;
+  product_price: number;
+  quantity: number;
+};
+
+type Order = {
+  id: string;
+  total: number;
+  status: string;
+  created_at: string;
+  order_items: OrderItem[];
+};
+
 const emptyProfile: Profile = {
   full_name: "",
   phone: "",
@@ -33,10 +47,34 @@ const emptyProfile: Profile = {
   is_admin: false,
 };
 
+const statusLabel: Record<string, string> = {
+  pendente: "Pendente",
+  confirmado: "Confirmado",
+  preparando: "Preparando",
+  enviado: "Enviado",
+  entregue: "Entregue",
+  cancelado: "Cancelado",
+};
+
+function formatPrice(v: number) {
+  return Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function ContaPage() {
   const router = useRouter();
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [profile, setProfile] = useState<Profile>(emptyProfile);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -79,6 +117,15 @@ export default function ContaPage() {
               is_admin: Boolean(profileData.is_admin),
             });
           }
+
+          // Pedidos do usuário
+          const params = new URLSearchParams({
+            userId: currentUser.id,
+            email: currentUser.email || "",
+          });
+          const res = await fetch(`/api/my-orders?${params}`);
+          const data = await res.json();
+          if (res.ok) setOrders(data.orders || []);
         }
 
         const { data } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -93,7 +140,6 @@ export default function ContaPage() {
     }
 
     load();
-
     return () => subscription?.unsubscribe();
   }, []);
 
@@ -105,7 +151,6 @@ export default function ContaPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
-
     setSaving(true);
     setError("");
     setSuccess("");
@@ -128,7 +173,6 @@ export default function ContaPage() {
           user.email?.toLowerCase() === "jefersonfferreira23@gmail.com",
         updated_at: new Date().toISOString(),
       });
-
       if (upsertError) throw upsertError;
       setSuccess("Dados salvos com sucesso!");
     } catch (err) {
@@ -175,7 +219,6 @@ export default function ContaPage() {
         <p className="text-gray-600 mb-10">
           Faça login para gerenciar seus dados e pedidos.
         </p>
-
         <div className="max-w-sm mx-auto bg-white rounded-2xl border border-gray-100 p-8 text-center">
           <div className="w-14 h-14 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <LogIn className="w-7 h-7 text-primary-600" />
@@ -186,7 +229,7 @@ export default function ContaPage() {
           </p>
           <Link
             href="/login"
-            className="block w-full bg-primary-600 text-white font-medium py-2.5 rounded-xl hover:bg-primary-700 transition-colors"
+            className="block w-full bg-primary-600 text-white font-medium py-2.5 rounded-xl hover:bg-primary-700"
           >
             Entrar / Cadastrar
           </Link>
@@ -194,6 +237,10 @@ export default function ContaPage() {
       </div>
     );
   }
+
+  const isAdmin =
+    profile.is_admin ||
+    user.email?.toLowerCase() === "jefersonfferreira23@gmail.com";
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
@@ -203,8 +250,7 @@ export default function ContaPage() {
           <p className="text-gray-600">{user.email}</p>
         </div>
         <div className="flex items-center gap-4">
-          {(profile.is_admin ||
-            user.email?.toLowerCase() === "jefersonfferreira23@gmail.com") && (
+          {isAdmin && (
             <Link
               href="/admin"
               className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:underline"
@@ -215,12 +261,50 @@ export default function ContaPage() {
           )}
           <button
             onClick={handleLogout}
-            className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-red-600 transition-colors"
+            className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-red-600"
           >
             <LogOut className="w-4 h-4" />
             Sair
           </button>
         </div>
+      </div>
+
+      {/* Meus pedidos */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+            <Package className="w-5 h-5 text-primary-600" />
+          </div>
+          <h2 className="font-semibold text-lg">Meus pedidos</h2>
+        </div>
+
+        {orders.length === 0 ? (
+          <p className="text-sm text-gray-500">Você ainda não fez pedidos.</p>
+        ) : (
+          <div className="space-y-3">
+            {orders.map((o) => (
+              <div
+                key={o.id}
+                className="border border-gray-100 rounded-xl p-4 text-sm"
+              >
+                <div className="flex justify-between gap-2 mb-2">
+                  <span className="font-medium">
+                    {statusLabel[o.status] || o.status}
+                  </span>
+                  <span className="text-gray-500">{formatDate(o.created_at)}</span>
+                </div>
+                <p className="text-gray-600 mb-1">
+                  {(o.order_items || [])
+                    .map((i) => `${i.quantity}x ${i.product_name}`)
+                    .join(", ")}
+                </p>
+                <p className="font-semibold text-primary-600">
+                  {formatPrice(o.total)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
@@ -231,7 +315,6 @@ export default function ContaPage() {
             </div>
             <h2 className="font-semibold text-lg">Dados pessoais</h2>
           </div>
-
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -251,31 +334,21 @@ export default function ContaPage() {
                 value={profile.phone || ""}
                 onChange={(e) => updateField("phone", e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="(00) 00000-0000"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                CPF
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">CPF</label>
               <input
                 value={profile.cpf || ""}
                 onChange={(e) => updateField("cpf", e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="000.000.000-00"
               />
             </div>
           </div>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-              <Package className="w-5 h-5 text-primary-600" />
-            </div>
-            <h2 className="font-semibold text-lg">Endereço de entrega</h2>
-          </div>
-
+          <h2 className="font-semibold text-lg mb-5">Endereço de entrega</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
@@ -283,7 +356,6 @@ export default function ContaPage() {
                 value={profile.address_cep || ""}
                 onChange={(e) => updateField("address_cep", e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="00000-000"
               />
             </div>
             <div className="sm:col-span-2">
@@ -310,7 +382,6 @@ export default function ContaPage() {
                 value={profile.address_complement || ""}
                 onChange={(e) => updateField("address_complement", e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="Apto, bloco..."
               />
             </div>
             <div>
