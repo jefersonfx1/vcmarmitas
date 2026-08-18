@@ -56,7 +56,6 @@ export default function LoginPage() {
         return;
       }
 
-      // Cadastro
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
@@ -69,7 +68,6 @@ export default function LoginPage() {
       });
       if (signUpError) throw signUpError;
 
-      // Atualiza perfil com dados completos
       if (data.user) {
         await supabase.from("profiles").upsert({
           id: data.user.id,
@@ -280,7 +278,7 @@ export default function LoginPage() {
             Já tem conta?{" "}
             <button
               type="button"
-default             onClick={() => {
+              onClick={() => {
                 setMode("login");
                 setError("");
                 setMessage("");
