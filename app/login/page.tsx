@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +18,14 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setMessage("");
+
+    if (!isSupabaseConfigured()) {
+      setError(
+        "Supabase não configurado. Verifique NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY no Netlify."
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -126,6 +134,7 @@ export default function LoginPage() {
           <>
             Não tem conta?{" "}
             <button
+              type="button"
               onClick={() => {
                 setMode("signup");
                 setError("");
@@ -140,6 +149,7 @@ export default function LoginPage() {
           <>
             Já tem conta?{" "}
             <button
+              type="button"
               onClick={() => {
                 setMode("login");
                 setError("");

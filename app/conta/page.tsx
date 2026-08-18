@@ -4,42 +4,75 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { User, Package, LogOut, LogIn } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 export default function ContaPage() {
   const router = useRouter();
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const supabase = createClient();
-
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
+    if (!isSupabaseConfigured()) {
+      setError("Autenticação ainda não configurada (variáveis do Supabase ausentes).");
       setLoading(false);
-    });
+      return;
+    }
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+    let subscription: { unsubscribe: () => void } | null = null;
 
-    return () => subscription.unsubscribe();
+    try {
+      const supabase = createClient();
+
+      supabase.auth.getUser().then(({ data, error: authError }) => {
+        if (authError) {
+          console.error(authError);
+        }
+        setUser(data.user);
+        setLoading(false);
+      });
+
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null);
+      });
+      subscription = data.subscription;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao carregar conta");
+      setLoading(false);
+    }
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
   async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    setUser(null);
-    router.refresh();
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      setUser(null);
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-20 text-center text-gray-500">
         Carregando...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-20 text-center">
+        <p className="text-red-600 mb-4">{error}</p>
+        <Link href="/" className="text-primary-600 hover:underline">
+          Voltar à loja
+        </Link>
       </div>
     );
   }
@@ -94,9 +127,7 @@ export default function ContaPage() {
           </div>
           <h2 className="font-semibold text-lg mb-1">Dados da conta</h2>
           <p className="text-sm text-gray-500 mb-1">E-mail: {user.email}</p>
-          <p className="text-xs text-gray-400">
-            ID: {user.id.slice(0, 8)}...
-          </p>
+          <p className="text-xs text-gray-400">ID: {user.id.slice(0, 8)}...</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
