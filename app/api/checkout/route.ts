@@ -23,12 +23,13 @@ type CheckoutBody = {
     postalCode?: string;
     city?: string;
   };
+  userId?: string;
 };
 
 export async function POST(req: NextRequest) {
   try {
     const body: CheckoutBody = await req.json();
-    const { items, customer } = body;
+    const { items, customer, userId } = body;
 
     if (!items?.length) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
@@ -144,7 +145,6 @@ export async function POST(req: NextRequest) {
         ? `https://asaas.com/checkoutSession/show?id=${checkoutId}`
         : `https://sandbox.asaas.com/checkoutSession/show?id=${checkoutId}`);
 
-    // Salva o pedido no Supabase
     try {
       const supabase = createAdminClient();
 
@@ -164,6 +164,7 @@ export async function POST(req: NextRequest) {
           total: Number(total.toFixed(2)),
           status: "pendente",
           asaas_checkout_id: checkoutId,
+          user_id: userId || null,
         })
         .select("id")
         .single();
@@ -173,22 +174,15 @@ export async function POST(req: NextRequest) {
       } else if (order) {
         const orderItems = items.map((item) => ({
           order_id: order.id,
-          product_id: item.id.length === 36 ? item.id : null, // uuid check simples
+          product_id: null,
           product_name: item.name,
           product_price: Number(item.price.toFixed(2)),
           quantity: item.quantity,
         }));
 
-        const { error: itemsError } = await supabase
-          .from("order_items")
-          .insert(orderItems);
-
-        if (itemsError) {
-          console.error("Erro ao salvar itens:", itemsError);
-        }
+        await supabase.from("order_items").insert(orderItems);
       }
     } catch (dbErr) {
-      // Não bloqueia o pagamento se o banco falhar
       console.error("Erro Supabase (pedido não salvo):", dbErr);
     }
 
