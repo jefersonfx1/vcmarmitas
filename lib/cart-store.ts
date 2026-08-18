@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { Product } from "./products";
+import { Product, unitPriceForQuantity } from "./products";
 
 export type CartItem = Product & {
   quantity: number;
@@ -10,7 +10,8 @@ export type CartItem = Product & {
 
 type CartState = {
   items: CartItem[];
-  addItem: (product: Product) => void;
+  addItem: (product: Product, quantity?: number) => void;
+  setFlavorQuantities: (selections: { product: Product; quantity: number }[]) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
@@ -23,19 +24,29 @@ export const useCart = create<CartState>()(
     (set, get) => ({
       items: [],
 
-      addItem: (product) => {
+      addItem: (product, quantity = 1) => {
         const items = get().items;
         const existing = items.find((i) => i.id === product.id);
 
         if (existing) {
           set({
             items: items.map((i) =>
-              i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+              i.id === product.id
+                ? { ...i, quantity: i.quantity + quantity }
+                : i
             ),
           });
         } else {
-          set({ items: [...items, { ...product, quantity: 1 }] });
+          set({ items: [...items, { ...product, quantity }] });
         }
+      },
+
+      /** Substitui o carrinho pelas seleções do kit (montagem) */
+      setFlavorQuantities: (selections) => {
+        const items = selections
+          .filter((s) => s.quantity > 0)
+          .map((s) => ({ ...s.product, quantity: s.quantity }));
+        set({ items });
       },
 
       removeItem: (id) => {
@@ -58,8 +69,12 @@ export const useCart = create<CartState>()(
 
       totalItems: () => get().items.reduce((acc, i) => acc + i.quantity, 0),
 
-      totalPrice: () =>
-        get().items.reduce((acc, i) => acc + i.price * i.quantity, 0),
+      totalPrice: () => {
+        const totalQty = get().totalItems();
+        const unit = unitPriceForQuantity(totalQty);
+        // preço progressivo baseado na quantidade total de marmitas
+        return totalQty * unit;
+      },
     }),
     {
       name: "vcmarmitas-cart",
