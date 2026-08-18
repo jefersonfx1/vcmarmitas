@@ -26,6 +26,13 @@ type CheckoutBody = {
   userId?: string;
 };
 
+/** Asaas limita o nome do item a 30 caracteres */
+function truncate(str: string, max: number) {
+  const s = (str || "").trim();
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + "…";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body: CheckoutBody = await req.json();
@@ -72,22 +79,29 @@ export async function POST(req: NextRequest) {
     );
 
     const asaasItems = items.map((item) => ({
-      name: item.name,
-      description: item.description || "Marmita congelada",
+      name: truncate(item.name, 30),
+      description: truncate(
+        item.description || item.name || "Marmita congelada",
+        150
+      ),
       quantity: item.quantity,
       value: Number(item.price.toFixed(2)),
-      externalReference: item.id,
+      externalReference: String(item.id).slice(0, 100),
     }));
 
     const customerData: Record<string, string | number | undefined> = {
-      name: customer.name,
+      name: truncate(customer.name, 100),
       email: customer.email,
       phone: customer.phone?.replace(/\D/g, "") || undefined,
       cpfCnpj: customer.cpfCnpj?.replace(/\D/g, "") || undefined,
-      address: customer.address,
-      addressNumber: customer.addressNumber,
-      complement: customer.complement || undefined,
-      province: customer.province || undefined,
+      address: truncate(customer.address, 100),
+      addressNumber: String(customer.addressNumber).slice(0, 10),
+      complement: customer.complement
+        ? truncate(customer.complement, 50)
+        : undefined,
+      province: customer.province
+        ? truncate(customer.province, 50)
+        : undefined,
       postalCode: customer.postalCode?.replace(/\D/g, "") || undefined,
     };
 
