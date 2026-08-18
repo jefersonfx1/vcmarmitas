@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type CartItem = {
   id: string;
@@ -64,6 +65,11 @@ export async function POST(req: NextRequest) {
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
+    const total = items.reduce(
+      (acc, item) => acc + item.price * item.quantity,
+      0
+    );
+
     const asaasItems = items.map((item) => ({
       name: item.name,
       description: item.description || "Marmita congelada",
@@ -84,18 +90,19 @@ export async function POST(req: NextRequest) {
       postalCode: customer.postalCode?.replace(/\D/g, "") || undefined,
     };
 
-    // Remove campos undefined
     Object.keys(customerData).forEach((key) => {
       if (customerData[key] === undefined || customerData[key] === "") {
         delete customerData[key];
       }
     });
 
+    const externalRef = `order-${Date.now()}`;
+
     const payload = {
       billingTypes: ["PIX", "CREDIT_CARD"],
       chargeTypes: ["DETACHED"],
       minutesToExpire: 60,
-      externalReference: `order-${Date.now()}`,
+      externalReference: externalRef,
       callback: {
         successUrl: `${siteUrl}/pedido/sucesso`,
         cancelUrl: `${siteUrl}/pedido/cancelado`,
@@ -136,6 +143,54 @@ export async function POST(req: NextRequest) {
       (env === "production"
         ? `https://asaas.com/checkoutSession/show?id=${checkoutId}`
         : `https://sandbox.asaas.com/checkoutSession/show?id=${checkoutId}`);
+
+    // Salva o pedido no Supabase
+    try {
+      const supabase = createAdminClient();
+
+      const { data: order, error: orderError } = await supabase
+        .from("orders")
+        .insert({
+          customer_name: customer.name,
+          customer_email: customer.email,
+          customer_phone: customer.phone?.replace(/\D/g, "") || customer.phone,
+          customer_cpf: customer.cpfCnpj?.replace(/\D/g, "") || null,
+          address_street: customer.address,
+          address_number: customer.addressNumber,
+          address_complement: customer.complement || null,
+          address_neighborhood: customer.province || null,
+          address_city: customer.city || null,
+          address_cep: customer.postalCode.replace(/\D/g, ""),
+          total: Number(total.toFixed(2)),
+          status: "pendente",
+          asaas_checkout_id: checkoutId,
+        })
+        .select("id")
+        .single();
+
+      if (orderError) {
+        console.error("Erro ao salvar pedido:", orderError);
+      } else if (order) {
+        const orderItems = items.map((item) => ({
+          order_id: order.id,
+          product_id: item.id.length === 36 ? item.id : null, // uuid check simples
+          product_name: item.name,
+          product_price: Number(item.price.toFixed(2)),
+          quantity: item.quantity,
+        }));
+
+        const { error: itemsError } = await supabase
+          .from("order_items")
+          .insert(orderItems);
+
+        if (itemsError) {
+          console.error("Erro ao salvar itens:", itemsError);
+        }
+      }
+    } catch (dbErr) {
+      // Não bloqueia o pagamento se o banco falhar
+      console.error("Erro Supabase (pedido não salvo):", dbErr);
+    }
 
     return NextResponse.json({
       id: checkoutId,
