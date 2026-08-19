@@ -13,12 +13,21 @@ type AppliedCoupon = {
   description?: string;
 };
 
+type FreightInfo = {
+  available: boolean;
+  price: number;
+  label: string;
+  message?: string;
+};
+
 export default function CheckoutPage() {
   const { items, totalPrice, clearCart } = useCart();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
   const [prefilled, setPrefilled] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
+  const [freight, setFreight] = useState<FreightInfo | null>(null);
 
   const [couponInput, setCouponInput] = useState("");
   const [couponLoading, setCouponLoading] = useState(false);
@@ -40,7 +49,52 @@ export default function CheckoutPage() {
 
   const subtotal = totalPrice();
   const discount = appliedCoupon?.discount_amount || 0;
-  const finalTotal = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
+  const freightPrice = freight?.available ? freight.price : 0;
+  const finalTotal = Math.max(
+    0,
+    Math.round((subtotal - discount + freightPrice) * 100) / 100
+  );
+
+  async function lookupCep(cepValue: string) {
+    const digits = cepValue.replace(/\D/g, "");
+    if (digits.length !== 8) {
+      setFreight(null);
+      return;
+    }
+
+    setCepLoading(true);
+    try {
+      const res = await fetch(`/api/cep?cep=${digits}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setFreight({
+          available: false,
+          price: 0,
+          label: "CEP inválido",
+          message: data.error || "CEP não encontrado",
+        });
+        return;
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        cep: digits,
+        street: data.address.street || prev.street,
+        neighborhood: data.address.neighborhood || prev.neighborhood,
+        city: data.address.city || prev.city,
+      }));
+      setFreight(data.freight);
+    } catch {
+      setFreight({
+        available: false,
+        price: 0,
+        label: "Erro",
+        message: "Não foi possível consultar o CEP",
+      });
+    } finally {
+      setCepLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
@@ -59,13 +113,14 @@ export default function CheckoutPage() {
           .eq("id", auth.user.id)
           .maybeSingle();
 
+        const cep = profile?.address_cep || "";
         setForm((prev) => ({
           ...prev,
           name: profile?.full_name || prev.name,
           email: auth.user!.email || prev.email,
           phone: profile?.phone || prev.phone,
           cpfCnpj: profile?.cpf || prev.cpfCnpj,
-          cep: profile?.address_cep || prev.cep,
+          cep: cep || prev.cep,
           street: profile?.address_street || prev.street,
           number: profile?.address_number || prev.number,
           complement: profile?.address_complement || prev.complement,
@@ -73,12 +128,17 @@ export default function CheckoutPage() {
           city: profile?.address_city || prev.city,
         }));
         setPrefilled(true);
+
+        if (cep && cep.replace(/\D/g, "").length === 8) {
+          lookupCep(cep);
+        }
       } catch (err) {
         console.error(err);
       }
     }
 
     loadProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function updateField(field: string, value: string) {
@@ -133,6 +193,15 @@ export default function CheckoutPage() {
   async function handleCheckout(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (freight && !freight.available) {
+      setError(
+        freight.message ||
+          "Não entregamos neste CEP. Atendemos Brasília e entorno."
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -161,6 +230,7 @@ export default function CheckoutPage() {
           },
           userId: userId || undefined,
           couponCode: appliedCoupon?.code || undefined,
+          freight: freightPrice,
         }),
       });
 
@@ -247,17 +317,34 @@ export default function CheckoutPage() {
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
-              <h2 className="font-semibold text-lg mb-4">Endereço de entrega *</h2>
+              <h2 className="font-semibold text-lg mb-4">
+                Endereço de entrega * (Brasília e entorno)
+              </h2>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">CEP *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    CEP * {cepLoading && "(buscando...)"}
+                  </label>
                   <input
                     type="text"
                     required
                     value={form.cep}
                     onChange={(e) => updateField("cep", e.target.value)}
+                    onBlur={() => lookupCep(form.cep)}
                     className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="00000-000"
                   />
+                  {freight && (
+                    <p
+                      className={`text-xs mt-1 ${
+                        freight.available ? "text-green-700" : "text-red-600"
+                      }`}
+                    >
+                      {freight.available
+                        ? `${freight.label} — frete ${formatPrice(freight.price)}`
+                        : freight.message}
+                    </p>
+                  )}
                 </div>
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rua *</label>
@@ -326,7 +413,6 @@ export default function CheckoutPage() {
                 ))}
               </ul>
 
-              {/* Cupom */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Cupom de desconto
@@ -386,6 +472,16 @@ export default function CheckoutPage() {
                     <span>−{formatPrice(discount)}</span>
                   </div>
                 )}
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Frete</span>
+                  <span>
+                    {freight?.available
+                      ? formatPrice(freight.price)
+                      : freight
+                        ? "Indisponível"
+                        : "Informe o CEP"}
+                  </span>
+                </div>
                 <div className="flex justify-between font-semibold text-lg">
                   <span>Total</span>
                   <span className="text-primary-600">{formatPrice(finalTotal)}</span>
@@ -399,7 +495,7 @@ export default function CheckoutPage() {
               )}
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (freight !== null && !freight.available)}
                 className="w-full bg-primary-600 text-white font-semibold py-3.5 rounded-xl hover:bg-primary-700 disabled:opacity-60"
               >
                 {loading ? "Gerando pagamento..." : "Pagar com Asaas"}
