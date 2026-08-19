@@ -73,58 +73,74 @@ export const flavors: Product[] = [
   },
 ];
 
-/** @deprecated use flavors - mantido para compatibilidade */
+/** @deprecated use flavors */
 export const products = flavors;
 
 export type KitOption = {
   id: string;
   label: string;
-  quantity: number;
-  /** preço total do kit (ou unitário se unitPrice) */
-  totalPrice: number;
+  /** quantidade mínima desta faixa */
+  minQty: number;
+  /** quantidade máxima desta faixa (null = sem teto) */
+  maxQty: number | null;
   unitPrice: number;
   badge?: string;
+  /** texto auxiliar, ex: "de 10 a 19 un." */
+  rangeLabel: string;
 };
 
+/**
+ * Faixas progressivas (não é limite fixo de kit):
+ * 1–4 → R$ 24,90
+ * 5–9 → R$ 23,98
+ * 10–19 → R$ 22,99
+ * 20–49 → R$ 18,90
+ * 50+ → R$ 14,99
+ */
 export const kitOptions: KitOption[] = [
   {
     id: "kit-1",
     label: "Venda avulsa",
-    quantity: 1,
-    totalPrice: 24.9,
+    minQty: 1,
+    maxQty: 4,
     unitPrice: 24.9,
+    rangeLabel: "1 a 4 unidades",
   },
   {
     id: "kit-5",
-    label: "Kit com 5 marmitas",
-    quantity: 5,
-    totalPrice: 119.9,
+    label: "A partir de 5 marmitas",
+    minQty: 5,
+    maxQty: 9,
     unitPrice: 23.98,
     badge: "Economia",
+    rangeLabel: "5 a 9 unidades",
   },
   {
     id: "kit-10",
-    label: "Kit com 10 marmitas",
-    quantity: 10,
-    totalPrice: 229.9,
+    label: "A partir de 10 marmitas",
+    minQty: 10,
+    maxQty: 19,
     unitPrice: 22.99,
     badge: "Popular",
+    rangeLabel: "10 a 19 unidades",
   },
   {
     id: "kit-20",
-    label: "Kit com 20 marmitas",
-    quantity: 20,
-    totalPrice: 378.0,
+    label: "A partir de 20 marmitas",
+    minQty: 20,
+    maxQty: 49,
     unitPrice: 18.9,
     badge: "Melhor custo",
+    rangeLabel: "20 a 49 unidades",
   },
   {
     id: "kit-50",
-    label: "Kit com 50 ou mais",
-    quantity: 50,
-    totalPrice: 749.5, // 50 x 14.99
+    label: "A partir de 50 marmitas",
+    minQty: 50,
+    maxQty: null,
     unitPrice: 14.99,
     badge: "Atacado",
+    rangeLabel: "50 ou mais",
   },
 ];
 
@@ -142,4 +158,12 @@ export function unitPriceForQuantity(qty: number): number {
   if (qty >= 10) return 22.99;
   if (qty >= 5) return 23.98;
   return 24.9;
+}
+
+export function tierLabelForQuantity(qty: number): string {
+  if (qty >= 50) return "Faixa 50+";
+  if (qty >= 20) return "Faixa 20–49";
+  if (qty >= 10) return "Faixa 10–19";
+  if (qty >= 5) return "Faixa 5–9";
+  return "Avulsa";
 }

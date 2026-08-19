@@ -21,8 +21,8 @@ export default function Header() {
             <Link href="/" className="text-gray-700 hover:text-primary-600 transition-colors">
               Início
             </Link>
-            <Link href="/cardapio" className="text-gray-700 hover:text-primary-600 transition-colors">
-              Cardápio
+            <Link href="/#kits" className="text-gray-700 hover:text-primary-600 transition-colors">
+              Kits
             </Link>
             <Link href="/sobre" className="text-gray-700 hover:text-primary-600 transition-colors">
               Sobre
@@ -37,7 +37,7 @@ export default function Header() {
             >
               <ShoppingCart className="w-5 h-5" />
               {totalItems() > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-primary-600 text-white text-[10px] font-bold w-4.5 h-4.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center">
+                <span className="absolute -top-0.5 -right-0.5 bg-primary-600 text-white text-[10px] font-bold min-w-[18px] h-[18px] rounded-full flex items-center justify-center">
                   {totalItems()}
                 </span>
               )}
@@ -65,8 +65,8 @@ export default function Header() {
             <Link href="/" onClick={() => setOpen(false)} className="text-gray-700 py-1">
               Início
             </Link>
-            <Link href="/cardapio" onClick={() => setOpen(false)} className="text-gray-700 py-1">
-              Cardápio
+            <Link href="/#kits" onClick={() => setOpen(false)} className="text-gray-700 py-1">
+              Kits
             </Link>
             <Link href="/sobre" onClick={() => setOpen(false)} className="text-gray-700 py-1">
               Sobre

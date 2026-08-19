@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { ArrowRight, Snowflake, Truck, Heart } from "lucide-react";
 import { kitOptions, formatPrice } from "@/lib/products";
 import KitBuilderModal from "@/components/KitBuilderModal";
@@ -12,7 +11,6 @@ export default function HomePage() {
 
   return (
     <div>
-      {/* Hero */}
       <section className="bg-gradient-to-br from-primary-500 to-primary-700 text-white">
         <div className="max-w-6xl mx-auto px-4 py-16 md:py-24 text-center">
           <p className="text-primary-100 text-sm font-medium tracking-wide mb-3">
@@ -24,25 +22,27 @@ export default function HomePage() {
             <span className="text-primary-100">Praticidade · Sabor · Equilíbrio</span>
           </h1>
           <p className="text-lg text-primary-50 max-w-2xl mx-auto mb-8">
-            Escolha seu kit, monte os sabores e receba em casa — prontas para
+            Escolha a faixa, monte os sabores e receba em casa — prontas para
             aquecer e aproveitar.
           </p>
           <a
             href="#kits"
             className="inline-flex items-center gap-2 bg-white text-primary-700 font-semibold px-8 py-3.5 rounded-full hover:bg-primary-50 transition-colors"
           >
-            Ver kits
+            Ver opções
             <ArrowRight className="w-5 h-5" />
           </a>
         </div>
       </section>
 
-      {/* Kits */}
       <section id="kits" className="max-w-6xl mx-auto px-4 py-14">
         <div className="text-center mb-10">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Escolha seu kit</h2>
-          <p className="text-gray-600">
-            Quanto maior o kit, maior o desconto por marmita.
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">
+            Escolha a quantidade
+          </h2>
+          <p className="text-gray-600 max-w-xl mx-auto">
+            Desconto progressivo: quanto mais você leva, menor o preço por
+            marmita. A faixa indica o preço a partir daquela quantidade.
           </p>
         </div>
 
@@ -63,34 +63,18 @@ export default function HomePage() {
                 )}
               </div>
               <p className="text-2xl font-bold text-primary-600 mb-1">
-                {kit.quantity >= 50
-                  ? `${formatPrice(kit.unitPrice)} / un.`
-                  : formatPrice(kit.totalPrice)}
+                {formatPrice(kit.unitPrice)}
+                <span className="text-sm font-medium text-gray-500"> / un.</span>
               </p>
-              {kit.quantity > 1 && kit.quantity < 50 && (
-                <p className="text-xs text-gray-500">
-                  {formatPrice(kit.unitPrice)} por marmita
-                </p>
-              )}
-              {kit.quantity >= 50 && (
-                <p className="text-xs text-gray-500">a partir de 50 unidades</p>
-              )}
+              <p className="text-xs text-gray-500">{kit.rangeLabel}</p>
               <span className="inline-block mt-4 text-sm font-medium text-primary-600">
                 Montar sabores →
               </span>
             </button>
           ))}
         </div>
-
-        <p className="text-center text-sm text-gray-500 mt-8">
-          Ou veja o{" "}
-          <Link href="/cardapio" className="text-primary-600 hover:underline">
-            cardápio completo
-          </Link>
-        </p>
       </section>
 
-      {/* Benefícios */}
       <section className="bg-gray-50 border-t border-gray-100">
         <div className="max-w-6xl mx-auto px-4 py-14">
           <div className="grid md:grid-cols-3 gap-8">
@@ -109,7 +93,7 @@ export default function HomePage() {
               </div>
               <h3 className="font-semibold text-lg mb-2">Entrega prática</h3>
               <p className="text-gray-600 text-sm">
-                Receba em casa, no horário que for melhor para você.
+                Brasília, Valparaíso de Goiás e Novo Gama.
               </p>
             </div>
             <div className="text-center p-6">

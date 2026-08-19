@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { X, Minus, Plus } from "lucide-react";
-import { flavors, KitOption, formatPrice, unitPriceForQuantity } from "@/lib/products";
+import {
+  flavors,
+  KitOption,
+  formatPrice,
+  unitPriceForQuantity,
+  tierLabelForQuantity,
+} from "@/lib/products";
 import { useCart } from "@/lib/cart-store";
 import { useRouter } from "next/navigation";
 
@@ -12,6 +18,8 @@ type Props = {
   onClose: () => void;
 };
 
+const HARD_MAX = 200;
+
 export default function KitBuilderModal({ kit, open, onClose }: Props) {
   const router = useRouter();
   const setFlavorQuantities = useCart((s) => s.setFlavorQuantities);
@@ -20,7 +28,6 @@ export default function KitBuilderModal({ kit, open, onClose }: Props) {
     Object.fromEntries(flavors.map((f) => [f.id, 0]))
   );
 
-  // reset quando abre outro kit
   useEffect(() => {
     if (open) {
       setQty(Object.fromEntries(flavors.map((f) => [f.id, 0])));
@@ -32,27 +39,43 @@ export default function KitBuilderModal({ kit, open, onClose }: Props) {
     [qty]
   );
 
-  const remaining = kit.quantity - selectedTotal;
-  const unitPrice = unitPriceForQuantity(kit.quantity);
-  const estimatedTotal = kit.quantity * unitPrice;
+  const unitPrice = unitPriceForQuantity(Math.max(selectedTotal, kit.minQty));
+  const estimatedTotal = selectedTotal * unitPriceForQuantity(selectedTotal);
+  const meetsMin = selectedTotal >= kit.minQty;
 
   function change(id: string, delta: number) {
     setQty((prev) => {
-      const next = Math.max(0, (prev[id] || 0) + delta);
+      const current = prev[id] || 0;
+      const next = Math.max(0, current + delta);
       const others = Object.entries(prev).reduce(
         (acc, [k, v]) => (k === id ? acc : acc + v),
         0
       );
-      if (others + next > kit.quantity) return prev;
+      if (others + next > HARD_MAX) return prev;
       return { ...prev, [id]: next };
     });
   }
 
-  function handleConfirm() {
-    if (selectedTotal !== kit.quantity) return;
+  function setExact(id: string, value: string) {
+    const parsed = parseInt(value.replace(/\D/g, ""), 10);
+    const next = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 
+    setQty((prev) => {
+      const others = Object.entries(prev).reduce(
+        (acc, [k, v]) => (k === id ? acc : acc + v),
+        0
+      );
+      const capped = Math.min(next, HARD_MAX - others);
+      return { ...prev, [id]: Math.max(0, capped) };
+    });
+  }
+
+  function handleConfirm() {
+    if (!meetsMin || selectedTotal === 0) return;
+
+    const price = unitPriceForQuantity(selectedTotal);
     const selections = flavors.map((f) => ({
-      product: { ...f, price: unitPrice },
+      product: { ...f, price },
       quantity: qty[f.id] || 0,
     }));
 
@@ -72,8 +95,7 @@ export default function KitBuilderModal({ kit, open, onClose }: Props) {
           <div>
             <h2 className="font-bold text-lg text-gray-900">{kit.label}</h2>
             <p className="text-sm text-gray-500">
-              Escolha {kit.quantity} sabor{kit.quantity > 1 ? "es" : ""} •{" "}
-              {formatPrice(estimatedTotal)}
+              Mínimo {kit.minQty} un. · desconto progressivo conforme a quantidade
             </p>
           </div>
           <button
@@ -100,7 +122,7 @@ export default function KitBuilderModal({ kit, open, onClose }: Props) {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => change(flavor.id, -1)}
@@ -109,14 +131,21 @@ export default function KitBuilderModal({ kit, open, onClose }: Props) {
                 >
                   <Minus className="w-3.5 h-3.5" />
                 </button>
-                <span className="w-6 text-center font-semibold text-sm">
-                  {qty[flavor.id] || 0}
-                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={qty[flavor.id] || 0}
+                  onChange={(e) => setExact(flavor.id, e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  className="w-12 h-8 text-center font-semibold text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  aria-label={`Quantidade de ${flavor.name}`}
+                />
                 <button
                   type="button"
                   onClick={() => change(flavor.id, 1)}
                   className="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-40"
-                  disabled={remaining <= 0}
+                  disabled={selectedTotal >= HARD_MAX}
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
@@ -128,24 +157,34 @@ export default function KitBuilderModal({ kit, open, onClose }: Props) {
         <div className="p-4 border-t border-gray-100 space-y-3">
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">
-              Selecionadas: {selectedTotal}/{kit.quantity}
+              Total: <strong>{selectedTotal}</strong> un.
+              {selectedTotal > 0 && (
+                <>
+                  {" · "}
+                  {formatPrice(unitPriceForQuantity(selectedTotal))}/un
+                  {" · "}
+                  {tierLabelForQuantity(selectedTotal)}
+                </>
+              )}
             </span>
-            {remaining > 0 ? (
+            {!meetsMin ? (
               <span className="text-amber-600 font-medium">
-                Faltam {remaining}
+                Mín. {kit.minQty}
               </span>
             ) : (
-              <span className="text-green-600 font-medium">Completo</span>
+              <span className="text-green-600 font-medium">Ok</span>
             )}
           </div>
 
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={selectedTotal !== kit.quantity}
+            disabled={!meetsMin}
             className="w-full bg-primary-600 text-white font-semibold py-3.5 rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Adicionar ao carrinho — {formatPrice(estimatedTotal)}
+            {meetsMin
+              ? `Adicionar ao carrinho — ${formatPrice(estimatedTotal)}`
+              : `Selecione pelo menos ${kit.minQty} unidades`}
           </button>
         </div>
       </div>
