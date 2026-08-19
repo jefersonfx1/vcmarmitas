@@ -9,8 +9,10 @@ export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [loading, setLoading] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [freightMsg, setFreightMsg] = useState("");
 
   const [form, setForm] = useState({
     email: "",
@@ -29,6 +31,45 @@ export default function LoginPage() {
 
   function update(field: string, value: string) {
     setForm((p) => ({ ...p, [field]: value }));
+  }
+
+  async function handleCepBlur() {
+    const digits = form.address_cep.replace(/\D/g, "");
+    if (digits.length !== 8) return;
+
+    setCepLoading(true);
+    setFreightMsg("");
+    try {
+      const res = await fetch(`/api/cep?cep=${digits}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setFreightMsg(data.error || "CEP não encontrado");
+        return;
+      }
+
+      setForm((p) => ({
+        ...p,
+        address_cep: digits,
+        address_street: data.address.street || p.address_street,
+        address_neighborhood: data.address.neighborhood || p.address_neighborhood,
+        address_city: data.address.city || p.address_city,
+      }));
+
+      if (data.freight?.available) {
+        setFreightMsg(
+          `Entrega disponível: ${data.freight.label} — R$ ${Number(data.freight.price).toFixed(2)}`
+        );
+      } else {
+        setFreightMsg(
+          data.freight?.message ||
+            "Ainda não entregamos neste CEP (só Brasília e entorno)."
+        );
+      }
+    } catch {
+      setFreightMsg("Não foi possível consultar o CEP");
+    } finally {
+      setCepLoading(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -66,7 +107,6 @@ export default function LoginPage() {
       const cpf = form.cpf.replace(/\D/g, "");
       const cep = form.address_cep.replace(/\D/g, "");
 
-      // Todos os dados no metadata — o trigger do Supabase grava no profiles
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
@@ -87,7 +127,6 @@ export default function LoginPage() {
       });
       if (signUpError) throw signUpError;
 
-      // Reforço: salva via API (service role) mesmo se o trigger falhar
       if (data.user) {
         await fetch("/api/profile", {
           method: "POST",
@@ -108,7 +147,6 @@ export default function LoginPage() {
         });
       }
 
-      // Se já veio sessão (confirmação de e-mail desabilitada), entra direto
       if (data.session) {
         router.push("/conta");
         router.refresh();
@@ -182,17 +220,24 @@ export default function LoginPage() {
             </div>
             <div className="border-t border-gray-100 pt-4">
               <p className="text-sm font-medium text-gray-700 mb-3">
-                Endereço de entrega
+                Endereço de entrega (Brasília e entorno)
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
-                  <label className="block text-xs text-gray-500 mb-1">CEP *</label>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    CEP * {cepLoading && "(buscando...)"}
+                  </label>
                   <input
                     required
                     value={form.address_cep}
                     onChange={(e) => update("address_cep", e.target.value)}
+                    onBlur={handleCepBlur}
                     className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="00000-000"
                   />
+                  {freightMsg && (
+                    <p className="text-xs mt-1 text-gray-600">{freightMsg}</p>
+                  )}
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs text-gray-500 mb-1">Rua *</label>
