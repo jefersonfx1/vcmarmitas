@@ -24,9 +24,9 @@ type CheckoutBody = {
     city?: string;
   };
   userId?: string;
+  couponCode?: string;
 };
 
-/** Asaas limita o nome do item a 30 caracteres */
 function truncate(str: string, max: number) {
   const s = (str || "").trim();
   if (s.length <= max) return s;
@@ -36,7 +36,7 @@ function truncate(str: string, max: number) {
 export async function POST(req: NextRequest) {
   try {
     const body: CheckoutBody = await req.json();
-    const { items, customer, userId } = body;
+    const { items, customer, userId, couponCode } = body;
 
     if (!items?.length) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
@@ -73,21 +73,79 @@ export async function POST(req: NextRequest) {
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
-    const total = items.reduce(
+    const subtotal = items.reduce(
       (acc, item) => acc + item.price * item.quantity,
       0
     );
 
-    const asaasItems = items.map((item) => ({
-      name: truncate(item.name, 30),
-      description: truncate(
-        item.description || item.name || "Marmita congelada",
-        150
-      ),
-      quantity: item.quantity,
-      value: Number(item.price.toFixed(2)),
-      externalReference: String(item.id).slice(0, 100),
-    }));
+    let discountAmount = 0;
+    let appliedCouponCode: string | null = null;
+    let couponId: string | null = null;
+
+    if (couponCode) {
+      const supabase = createAdminClient();
+      const { data: coupon } = await supabase
+        .from("coupons")
+        .select("*")
+        .ilike("code", couponCode.trim())
+        .maybeSingle();
+
+      if (coupon && coupon.active) {
+        const now = new Date();
+        const startsOk =
+          !coupon.starts_at || new Date(coupon.starts_at) <= now;
+        const expiresOk =
+          !coupon.expires_at || new Date(coupon.expires_at) >= now;
+        const usesOk =
+          coupon.max_uses == null || coupon.used_count < coupon.max_uses;
+        const minOk = subtotal >= (Number(coupon.min_order_value) || 0);
+
+        if (startsOk && expiresOk && usesOk && minOk) {
+          if (coupon.discount_type === "percent") {
+            discountAmount =
+              (subtotal * Number(coupon.discount_value)) / 100;
+          } else {
+            discountAmount = Number(coupon.discount_value);
+          }
+          discountAmount = Math.min(discountAmount, subtotal);
+          discountAmount = Math.round(discountAmount * 100) / 100;
+          appliedCouponCode = coupon.code;
+          couponId = coupon.id;
+        }
+      }
+    }
+
+    const total = Math.round((subtotal - discountAmount) * 100) / 100;
+
+    // Distribui desconto proporcionalmente nos itens (Asaas não tem linha de desconto separada fácil)
+    let asaasItems;
+    if (discountAmount > 0 && subtotal > 0) {
+      const factor = total / subtotal;
+      asaasItems = items.map((item) => {
+        const unit = Number((item.price * factor).toFixed(2));
+        return {
+          name: truncate(item.name, 30),
+          description: truncate(
+            item.description || item.name || "Marmita congelada",
+            150
+          ),
+          quantity: item.quantity,
+          value: unit > 0 ? unit : 0.01,
+          externalReference: String(item.id).slice(0, 100),
+        };
+      });
+    } else {
+      asaasItems = items.map((item) => ({
+        name: truncate(item.name, 30),
+        description: truncate(
+          item.description || item.name || "Marmita congelada",
+          150
+        ),
+        quantity: item.quantity,
+        value: Number(item.price.toFixed(2)),
+        externalReference: String(item.id).slice(0, 100),
+      }));
+    }
 
     const customerData: Record<string, string | number | undefined> = {
       name: truncate(customer.name, 100),
@@ -179,6 +237,8 @@ export async function POST(req: NextRequest) {
           status: "pendente",
           asaas_checkout_id: checkoutId,
           user_id: userId || null,
+          coupon_code: appliedCouponCode,
+          discount_amount: discountAmount,
         })
         .select("id")
         .single();
@@ -195,6 +255,26 @@ export async function POST(req: NextRequest) {
         }));
 
         await supabase.from("order_items").insert(orderItems);
+
+        if (couponId) {
+          await supabase.rpc("increment_coupon_use", { coupon_id: couponId }).then(
+            async () => {},
+            async () => {
+              // fallback se a function não existir
+              const { data: c } = await supabase
+                .from("coupons")
+                .select("used_count")
+                .eq("id", couponId)
+                .single();
+              if (c) {
+                await supabase
+                  .from("coupons")
+                  .update({ used_count: (c.used_count || 0) + 1 })
+                  .eq("id", couponId);
+              }
+            }
+          );
+        }
       }
     } catch (dbErr) {
       console.error("Erro Supabase (pedido não salvo):", dbErr);
