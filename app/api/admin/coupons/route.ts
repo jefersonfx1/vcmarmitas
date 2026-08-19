@@ -31,6 +31,9 @@ export async function POST(req: NextRequest) {
       max_uses,
       active,
       expires_at,
+      applies_to,
+      per_user_limit,
+      first_purchase_only,
     } = body;
 
     if (!code || !discount_type || discount_value == null) {
@@ -42,6 +45,11 @@ export async function POST(req: NextRequest) {
 
     if (!["percent", "fixed"].includes(discount_type)) {
       return NextResponse.json({ error: "discount_type inválido" }, { status: 400 });
+    }
+
+    const applies = applies_to || "order";
+    if (!["order", "freight", "both"].includes(applies)) {
+      return NextResponse.json({ error: "applies_to inválido" }, { status: 400 });
     }
 
     const supabase = createAdminClient();
@@ -56,6 +64,12 @@ export async function POST(req: NextRequest) {
         max_uses: max_uses === "" || max_uses == null ? null : Number(max_uses),
         active: active !== false,
         expires_at: expires_at || null,
+        applies_to: applies,
+        per_user_limit:
+          per_user_limit === "" || per_user_limit == null
+            ? null
+            : Number(per_user_limit),
+        first_purchase_only: Boolean(first_purchase_only),
       })
       .select()
       .single();
@@ -95,6 +109,14 @@ export async function PATCH(req: NextRequest) {
           : Number(fields.max_uses);
     if (fields.active !== undefined) allowed.active = Boolean(fields.active);
     if (fields.expires_at !== undefined) allowed.expires_at = fields.expires_at || null;
+    if (fields.applies_to !== undefined) allowed.applies_to = fields.applies_to;
+    if (fields.per_user_limit !== undefined)
+      allowed.per_user_limit =
+        fields.per_user_limit === "" || fields.per_user_limit == null
+          ? null
+          : Number(fields.per_user_limit);
+    if (fields.first_purchase_only !== undefined)
+      allowed.first_purchase_only = Boolean(fields.first_purchase_only);
 
     const supabase = createAdminClient();
     const { data, error } = await supabase
