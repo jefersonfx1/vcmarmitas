@@ -7,12 +7,23 @@ import { useCart } from "@/lib/cart-store";
 import { formatPrice } from "@/lib/products";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
+type AppliedCoupon = {
+  code: string;
+  discount_amount: number;
+  description?: string;
+};
+
 export default function CheckoutPage() {
   const { items, totalPrice, clearCart } = useCart();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
   const [prefilled, setPrefilled] = useState(false);
+
+  const [couponInput, setCouponInput] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -26,6 +37,10 @@ export default function CheckoutPage() {
     neighborhood: "",
     city: "",
   });
+
+  const subtotal = totalPrice();
+  const discount = appliedCoupon?.discount_amount || 0;
+  const finalTotal = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
@@ -70,6 +85,40 @@ export default function CheckoutPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  async function applyCoupon() {
+    setCouponError("");
+    setCouponLoading(true);
+    try {
+      const res = await fetch("/api/coupons/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: couponInput.trim(),
+          orderTotal: subtotal,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Cupom inválido");
+
+      setAppliedCoupon({
+        code: data.code,
+        discount_amount: data.discount_amount,
+        description: data.description,
+      });
+    } catch (err) {
+      setAppliedCoupon(null);
+      setCouponError(err instanceof Error ? err.message : "Cupom inválido");
+    } finally {
+      setCouponLoading(false);
+    }
+  }
+
+  function removeCoupon() {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponError("");
+  }
+
   if (items.length === 0) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-20 text-center">
@@ -111,6 +160,7 @@ export default function CheckoutPage() {
             city: form.city || undefined,
           },
           userId: userId || undefined,
+          couponCode: appliedCoupon?.code || undefined,
         }),
       });
 
@@ -173,9 +223,7 @@ export default function CheckoutPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    CPF
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">CPF</label>
                   <input
                     type="text"
                     value={form.cpfCnpj}
@@ -277,12 +325,73 @@ export default function CheckoutPage() {
                   </li>
                 ))}
               </ul>
-              <div className="border-t border-gray-100 pt-4 mb-6">
+
+              {/* Cupom */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cupom de desconto
+                </label>
+                {appliedCoupon ? (
+                  <div className="flex items-center justify-between gap-2 p-3 bg-green-50 rounded-xl text-sm">
+                    <div>
+                      <span className="font-semibold text-green-800">
+                        {appliedCoupon.code}
+                      </span>
+                      <span className="text-green-700">
+                        {" "}−{formatPrice(appliedCoupon.discount_amount)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={removeCoupon}
+                      className="text-green-800 underline text-xs"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={couponInput}
+                      onChange={(e) =>
+                        setCouponInput(e.target.value.toUpperCase())
+                      }
+                      placeholder="Código"
+                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={applyCoupon}
+                      disabled={couponLoading || !couponInput.trim()}
+                      className="px-3 py-2 text-sm font-medium border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {couponLoading ? "..." : "Aplicar"}
+                    </button>
+                  </div>
+                )}
+                {couponError && (
+                  <p className="text-xs text-red-600 mt-1">{couponError}</p>
+                )}
+              </div>
+
+              <div className="border-t border-gray-100 pt-4 mb-6 space-y-2">
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Subtotal</span>
+                  <span>{formatPrice(subtotal)}</span>
+                </div>
+                {discount > 0 && (
+                  <div className="flex justify-between text-sm text-green-700">
+                    <span>Desconto</span>
+                    <span>−{formatPrice(discount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-semibold text-lg">
                   <span>Total</span>
-                  <span className="text-primary-600">{formatPrice(totalPrice())}</span>
+                  <span className="text-primary-600">{formatPrice(finalTotal)}</span>
                 </div>
               </div>
+
               {error && (
                 <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-xl">
                   {error}
