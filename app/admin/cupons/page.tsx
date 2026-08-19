@@ -15,6 +15,9 @@ type Coupon = {
   used_count: number;
   active: boolean;
   expires_at: string | null;
+  applies_to?: "order" | "freight" | "both";
+  per_user_limit?: number | null;
+  first_purchase_only?: boolean;
 };
 
 const emptyForm = {
@@ -26,6 +29,9 @@ const emptyForm = {
   max_uses: "",
   active: true,
   expires_at: "",
+  applies_to: "order" as "order" | "freight" | "both",
+  per_user_limit: "",
+  first_purchase_only: false,
 };
 
 export default function AdminCuponsPage() {
@@ -72,6 +78,10 @@ export default function AdminCuponsPage() {
       max_uses: c.max_uses != null ? String(c.max_uses) : "",
       active: c.active,
       expires_at: c.expires_at ? c.expires_at.slice(0, 10) : "",
+      applies_to: c.applies_to || "order",
+      per_user_limit:
+        c.per_user_limit != null ? String(c.per_user_limit) : "",
+      first_purchase_only: Boolean(c.first_purchase_only),
     });
     setShowForm(true);
   }
@@ -93,6 +103,10 @@ export default function AdminCuponsPage() {
         expires_at: form.expires_at
           ? new Date(form.expires_at + "T23:59:59").toISOString()
           : null,
+        applies_to: form.applies_to,
+        per_user_limit:
+          form.per_user_limit === "" ? null : Number(form.per_user_limit),
+        first_purchase_only: form.first_purchase_only,
       };
 
       const res = await fetch("/api/admin/coupons", {
@@ -120,9 +134,17 @@ export default function AdminCuponsPage() {
   }
 
   function labelDiscount(c: Coupon) {
-    return c.discount_type === "percent"
-      ? `${c.discount_value}%`
-      : `R$ ${Number(c.discount_value).toFixed(2)}`;
+    const val =
+      c.discount_type === "percent"
+        ? `${c.discount_value}%`
+        : `R$ ${Number(c.discount_value).toFixed(2)}`;
+    const target =
+      c.applies_to === "freight"
+        ? " no frete"
+        : c.applies_to === "both"
+          ? " no pedido+frete"
+          : " no pedido";
+    return val + target;
   }
 
   return (
@@ -172,6 +194,23 @@ export default function AdminCuponsPage() {
               />
             </div>
             <div>
+              <label className="block text-sm font-medium mb-1">Aplica em *</label>
+              <select
+                value={form.applies_to}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    applies_to: e.target.value as "order" | "freight" | "both",
+                  }))
+                }
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5"
+              >
+                <option value="order">Pedido (marmitas)</option>
+                <option value="freight">Somente frete</option>
+                <option value="both">Pedido + frete</option>
+              </select>
+            </div>
+            <div>
               <label className="block text-sm font-medium mb-1">Tipo *</label>
               <select
                 value={form.discount_type}
@@ -202,6 +241,9 @@ export default function AdminCuponsPage() {
                 }
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Frete grátis: Aplica em = Frete + Tipo % + Valor 100
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Pedido mínimo (R$)</label>
@@ -218,7 +260,7 @@ export default function AdminCuponsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
-                Limite de usos (vazio = ilimitado)
+                Limite total de usos (vazio = ∞)
               </label>
               <input
                 type="number"
@@ -226,6 +268,21 @@ export default function AdminCuponsPage() {
                 value={form.max_uses}
                 onChange={(e) => setForm((f) => ({ ...f, max_uses: e.target.value }))}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Limite por usuário (1 = uso único)
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={form.per_user_limit}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, per_user_limit: e.target.value }))
+                }
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5"
+                placeholder="vazio = sem limite"
               />
             </div>
             <div>
@@ -249,6 +306,19 @@ export default function AdminCuponsPage() {
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5"
               />
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.first_purchase_only}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    first_purchase_only: e.target.checked,
+                  }))
+                }
+              />
+              Somente primeira compra
+            </label>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -302,6 +372,8 @@ export default function AdminCuponsPage() {
                   {" · "}
                   usos: {c.used_count}
                   {c.max_uses != null ? `/${c.max_uses}` : "/∞"}
+                  {c.per_user_limit != null && ` · ${c.per_user_limit}x/usuário`}
+                  {c.first_purchase_only && " · 1ª compra"}
                   {!c.active && " · inativo"}
                 </p>
               </div>
