@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [form, setForm] = useState({
     email: "",
     password: "",
+    passwordConfirm: "",
     full_name: "",
     phone: "",
     cpf: "",
@@ -40,6 +41,11 @@ export default function LoginPage() {
       return;
     }
 
+    if (mode === "signup" && form.password !== form.passwordConfirm) {
+      setError("As senhas não coincidem.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -56,6 +62,11 @@ export default function LoginPage() {
         return;
       }
 
+      const phone = form.phone.replace(/\D/g, "");
+      const cpf = form.cpf.replace(/\D/g, "");
+      const cep = form.address_cep.replace(/\D/g, "");
+
+      // Todos os dados no metadata — o trigger do Supabase grava no profiles
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
@@ -63,29 +74,50 @@ export default function LoginPage() {
           emailRedirectTo: `${window.location.origin}/conta`,
           data: {
             full_name: form.full_name,
+            phone,
+            cpf,
+            address_street: form.address_street,
+            address_number: form.address_number,
+            address_complement: form.address_complement || "",
+            address_neighborhood: form.address_neighborhood || "",
+            address_city: form.address_city || "",
+            address_cep: cep,
           },
         },
       });
       if (signUpError) throw signUpError;
 
+      // Reforço: salva via API (service role) mesmo se o trigger falhar
       if (data.user) {
-        await supabase.from("profiles").upsert({
-          id: data.user.id,
-          full_name: form.full_name,
-          phone: form.phone.replace(/\D/g, ""),
-          cpf: form.cpf.replace(/\D/g, ""),
-          address_cep: form.address_cep.replace(/\D/g, ""),
-          address_street: form.address_street,
-          address_number: form.address_number,
-          address_complement: form.address_complement || null,
-          address_neighborhood: form.address_neighborhood || null,
-          address_city: form.address_city || null,
-          is_admin:
-            form.email.toLowerCase() === "jefersonfferreira23@gmail.com",
+        await fetch("/api/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: data.user.id,
+            email: form.email,
+            full_name: form.full_name,
+            phone,
+            cpf,
+            address_street: form.address_street,
+            address_number: form.address_number,
+            address_complement: form.address_complement || null,
+            address_neighborhood: form.address_neighborhood || null,
+            address_city: form.address_city || null,
+            address_cep: cep,
+          }),
         });
       }
 
-      setMessage("Conta criada! Você já pode fazer login.");
+      // Se já veio sessão (confirmação de e-mail desabilitada), entra direto
+      if (data.session) {
+        router.push("/conta");
+        router.refresh();
+        return;
+      }
+
+      setMessage(
+        "Conta criada! Faça login para continuar. Seus dados já ficam salvos para o checkout."
+      );
       setMode("login");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro na autenticação");
@@ -102,7 +134,7 @@ export default function LoginPage() {
       <p className="text-gray-600 text-center mb-8">
         {mode === "login"
           ? "Acesse sua conta"
-          : "Preencha seus dados para agilizar o checkout"}
+          : "Preencha seus dados uma vez — no checkout eles já vêm prontos"}
       </p>
 
       <form
@@ -238,6 +270,23 @@ export default function LoginPage() {
             placeholder="Mínimo 6 caracteres"
           />
         </div>
+
+        {mode === "signup" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Confirmar senha *
+            </label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={form.passwordConfirm}
+              onChange={(e) => update("passwordConfirm", e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              placeholder="Repita a senha"
+            />
+          </div>
+        )}
 
         {error && (
           <div className="p-3 bg-red-50 text-red-700 text-sm rounded-xl">{error}</div>
