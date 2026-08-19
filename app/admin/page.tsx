@@ -151,7 +151,13 @@ export default function AdminPage() {
             href="/admin/produtos"
             className="text-sm font-medium text-primary-600 hover:underline"
           >
-            Sabores / Produtos
+            Sabores
+          </Link>
+          <Link
+            href="/admin/cupons"
+            className="text-sm font-medium text-primary-600 hover:underline"
+          >
+            Cupons
           </Link>
           <button
             onClick={loadOrders}
