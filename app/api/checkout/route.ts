@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { calcFreight } from "@/lib/cep";
 
 type CartItem = {
   id: string;
@@ -25,6 +26,7 @@ type CheckoutBody = {
   };
   userId?: string;
   couponCode?: string;
+  freight?: number;
 };
 
 function truncate(str: string, max: number) {
@@ -55,6 +57,25 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Valida área de entrega no servidor
+    const freightCheck = calcFreight(
+      customer.postalCode,
+      customer.city,
+      undefined
+    );
+    if (!freightCheck.available) {
+      return NextResponse.json(
+        {
+          error:
+            freightCheck.message ||
+            "Não entregamos neste CEP. Atendemos Brasília e entorno.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const freightAmount = freightCheck.price;
 
     const apiKey = process.env.ASAAS_API_KEY;
     if (!apiKey) {
@@ -115,12 +136,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const total = Math.round((subtotal - discountAmount) * 100) / 100;
+    const itemsTotal = Math.round((subtotal - discountAmount) * 100) / 100;
+    const total = Math.round((itemsTotal + freightAmount) * 100) / 100;
 
-    // Distribui desconto proporcionalmente nos itens (Asaas não tem linha de desconto separada fácil)
     let asaasItems;
     if (discountAmount > 0 && subtotal > 0) {
-      const factor = total / subtotal;
+      const factor = itemsTotal / subtotal;
       asaasItems = items.map((item) => {
         const unit = Number((item.price * factor).toFixed(2));
         return {
@@ -145,6 +166,17 @@ export async function POST(req: NextRequest) {
         value: Number(item.price.toFixed(2)),
         externalReference: String(item.id).slice(0, 100),
       }));
+    }
+
+    // Linha de frete no Asaas
+    if (freightAmount > 0) {
+      asaasItems.push({
+        name: truncate(`Frete ${freightCheck.label}`, 30),
+        description: "Taxa de entrega",
+        quantity: 1,
+        value: Number(freightAmount.toFixed(2)),
+        externalReference: "freight",
+      });
     }
 
     const customerData: Record<string, string | number | undefined> = {
@@ -254,26 +286,30 @@ export async function POST(req: NextRequest) {
           quantity: item.quantity,
         }));
 
+        if (freightAmount > 0) {
+          orderItems.push({
+            order_id: order.id,
+            product_id: null,
+            product_name: `Frete — ${freightCheck.label}`,
+            product_price: freightAmount,
+            quantity: 1,
+          });
+        }
+
         await supabase.from("order_items").insert(orderItems);
 
         if (couponId) {
-          await supabase.rpc("increment_coupon_use", { coupon_id: couponId }).then(
-            async () => {},
-            async () => {
-              // fallback se a function não existir
-              const { data: c } = await supabase
-                .from("coupons")
-                .select("used_count")
-                .eq("id", couponId)
-                .single();
-              if (c) {
-                await supabase
-                  .from("coupons")
-                  .update({ used_count: (c.used_count || 0) + 1 })
-                  .eq("id", couponId);
-              }
-            }
-          );
+          const { data: c } = await supabase
+            .from("coupons")
+            .select("used_count")
+            .eq("id", couponId)
+            .single();
+          if (c) {
+            await supabase
+              .from("coupons")
+              .update({ used_count: (c.used_count || 0) + 1 })
+              .eq("id", couponId);
+          }
         }
       }
     } catch (dbErr) {
