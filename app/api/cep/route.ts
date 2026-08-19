@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchAddressByCep, calcFreight } from "@/lib/cep";
+import { fetchAddressByCep, calcFreightSmart } from "@/lib/cep";
 
 export async function GET(req: NextRequest) {
   const cep = req.nextUrl.searchParams.get("cep") || "";
@@ -15,7 +15,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "CEP não encontrado" }, { status: 404 });
     }
 
-    const freight = calcFreight(address.cep, address.city, address.state);
+    const freight = await calcFreightSmart(
+      address.cep,
+      address.city,
+      address.state
+    );
 
     return NextResponse.json({
       address,
