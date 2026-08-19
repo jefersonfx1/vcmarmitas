@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { User, Package, LogOut, LogIn, Save, Shield } from "lucide-react";
+import { User, Package, LogOut, LogIn, Save, Shield, Trash2 } from "lucide-react";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -77,6 +77,7 @@ export default function ContaPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -118,7 +119,6 @@ export default function ContaPage() {
             });
           }
 
-          // Pedidos do usuário
           const params = new URLSearchParams({
             userId: currentUser.id,
             email: currentUser.email || "",
@@ -156,24 +156,26 @@ export default function ContaPage() {
     setSuccess("");
 
     try {
-      const supabase = createClient();
-      const { error: upsertError } = await supabase.from("profiles").upsert({
-        id: user.id,
-        full_name: profile.full_name || null,
-        phone: (profile.phone || "").replace(/\D/g, "") || null,
-        cpf: (profile.cpf || "").replace(/\D/g, "") || null,
-        address_street: profile.address_street || null,
-        address_number: profile.address_number || null,
-        address_complement: profile.address_complement || null,
-        address_neighborhood: profile.address_neighborhood || null,
-        address_city: profile.address_city || null,
-        address_cep: (profile.address_cep || "").replace(/\D/g, "") || null,
-        is_admin:
-          profile.is_admin ||
-          user.email?.toLowerCase() === "jefersonfferreira23@gmail.com",
-        updated_at: new Date().toISOString(),
+      // Salva via API service role (mais confiável)
+      const res = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          email: user.email,
+          full_name: profile.full_name,
+          phone: profile.phone,
+          cpf: profile.cpf,
+          address_street: profile.address_street,
+          address_number: profile.address_number,
+          address_complement: profile.address_complement,
+          address_neighborhood: profile.address_neighborhood,
+          address_city: profile.address_city,
+          address_cep: profile.address_cep,
+        }),
       });
-      if (upsertError) throw upsertError;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao salvar");
       setSuccess("Dados salvos com sucesso!");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar");
@@ -190,6 +192,39 @@ export default function ContaPage() {
       router.refresh();
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (!user) return;
+    const ok = confirm(
+      "Tem certeza que deseja EXCLUIR sua conta permanentemente?\n\nEsta ação não pode ser desfeita."
+    );
+    if (!ok) return;
+
+    const ok2 = confirm("Confirme novamente: apagar conta e todos os dados do perfil?");
+    if (!ok2) return;
+
+    setDeleting(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/profile", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao excluir");
+
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      setUser(null);
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao excluir conta");
+      setDeleting(false);
     }
   }
 
@@ -269,7 +304,6 @@ export default function ContaPage() {
         </div>
       </div>
 
-      {/* Meus pedidos */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
         <div className="flex items-center gap-3 mb-5">
           <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
@@ -423,6 +457,24 @@ export default function ContaPage() {
           {saving ? "Salvando..." : "Salvar alterações"}
         </button>
       </form>
+
+      {/* Zona de perigo */}
+      <div className="mt-12 p-6 rounded-2xl border border-red-100 bg-red-50/50">
+        <h3 className="font-semibold text-red-800 mb-2">Excluir conta</h3>
+        <p className="text-sm text-red-700/80 mb-4">
+          Remove permanentemente seu login e dados de perfil. Pedidos antigos
+          podem permanecer no histórico da loja sem vínculo.
+        </p>
+        <button
+          type="button"
+          onClick={handleDeleteAccount}
+          disabled={deleting}
+          className="inline-flex items-center gap-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-4 py-2.5 rounded-xl disabled:opacity-60"
+        >
+          <Trash2 className="w-4 h-4" />
+          {deleting ? "Excluindo..." : "Excluir minha conta permanentemente"}
+        </button>
+      </div>
 
       <p className="text-center mt-10">
         <Link href="/" className="text-primary-600 font-medium hover:underline">
