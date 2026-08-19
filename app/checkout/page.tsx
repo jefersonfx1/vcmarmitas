@@ -10,6 +10,8 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 type AppliedCoupon = {
   code: string;
   discount_amount: number;
+  discount_order: number;
+  discount_freight: number;
   description?: string;
 };
 
@@ -48,11 +50,13 @@ export default function CheckoutPage() {
   });
 
   const subtotal = totalPrice();
-  const discount = appliedCoupon?.discount_amount || 0;
+  const discountOrder = appliedCoupon?.discount_order || 0;
+  const discountFreight = appliedCoupon?.discount_freight || 0;
   const freightPrice = freight?.available ? freight.price : 0;
+  const freightAfter = Math.max(0, freightPrice - discountFreight);
   const finalTotal = Math.max(
     0,
-    Math.round((subtotal - discount + freightPrice) * 100) / 100
+    Math.round((subtotal - discountOrder + freightAfter) * 100) / 100
   );
 
   async function lookupCep(cepValue: string) {
@@ -84,6 +88,8 @@ export default function CheckoutPage() {
         city: data.address.city || prev.city,
       }));
       setFreight(data.freight);
+      // revalida cupom se frete mudou
+      setAppliedCoupon(null);
     } catch {
       setFreight({
         available: false,
@@ -155,6 +161,9 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           code: couponInput.trim(),
           orderTotal: subtotal,
+          freightTotal: freightPrice,
+          userId: userId || undefined,
+          email: form.email || undefined,
         }),
       });
       const data = await res.json();
@@ -163,6 +172,8 @@ export default function CheckoutPage() {
       setAppliedCoupon({
         code: data.code,
         discount_amount: data.discount_amount,
+        discount_order: data.discount_order || 0,
+        discount_freight: data.discount_freight || 0,
         description: data.description,
       });
     } catch (err) {
@@ -197,7 +208,7 @@ export default function CheckoutPage() {
     if (freight && !freight.available) {
       setError(
         freight.message ||
-          "Não entregamos neste CEP. Atendemos Brasília e entorno."
+          "Não entregamos neste CEP. Atendemos Brasília, Valparaíso e Novo Gama."
       );
       return;
     }
@@ -318,7 +329,7 @@ export default function CheckoutPage() {
 
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <h2 className="font-semibold text-lg mb-4">
-                Endereço de entrega * (Brasília e entorno)
+                Endereço de entrega * (Brasília, Valparaíso e Novo Gama)
               </h2>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
@@ -466,10 +477,10 @@ export default function CheckoutPage() {
                   <span>Subtotal</span>
                   <span>{formatPrice(subtotal)}</span>
                 </div>
-                {discount > 0 && (
+                {discountOrder > 0 && (
                   <div className="flex justify-between text-sm text-green-700">
-                    <span>Desconto</span>
-                    <span>−{formatPrice(discount)}</span>
+                    <span>Desconto produtos</span>
+                    <span>−{formatPrice(discountOrder)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm text-gray-600">
@@ -482,6 +493,12 @@ export default function CheckoutPage() {
                         : "Informe o CEP"}
                   </span>
                 </div>
+                {discountFreight > 0 && (
+                  <div className="flex justify-between text-sm text-green-700">
+                    <span>Desconto frete</span>
+                    <span>−{formatPrice(discountFreight)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-semibold text-lg">
                   <span>Total</span>
                   <span className="text-primary-600">{formatPrice(finalTotal)}</span>
