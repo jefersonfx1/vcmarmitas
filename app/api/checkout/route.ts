@@ -58,7 +58,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Valida área de entrega no servidor
     const freightCheck = calcFreight(
       customer.postalCode,
       customer.city,
@@ -69,13 +68,13 @@ export async function POST(req: NextRequest) {
         {
           error:
             freightCheck.message ||
-            "Não entregamos neste CEP. Atendemos Brasília e entorno.",
+            "Não entregamos neste CEP. Atendemos Brasília, Valparaíso e Novo Gama.",
         },
         { status: 400 }
       );
     }
 
-    const freightAmount = freightCheck.price;
+    let freightAmount = freightCheck.price;
 
     const apiKey = process.env.ASAAS_API_KEY;
     if (!apiKey) {
@@ -99,7 +98,8 @@ export async function POST(req: NextRequest) {
       0
     );
 
-    let discountAmount = 0;
+    let discountOrder = 0;
+    let discountFreight = 0;
     let appliedCouponCode: string | null = null;
     let couponId: string | null = null;
 
@@ -121,26 +121,62 @@ export async function POST(req: NextRequest) {
           coupon.max_uses == null || coupon.used_count < coupon.max_uses;
         const minOk = subtotal >= (Number(coupon.min_order_value) || 0);
 
-        if (startsOk && expiresOk && usesOk && minOk) {
-          if (coupon.discount_type === "percent") {
-            discountAmount =
-              (subtotal * Number(coupon.discount_value)) / 100;
-          } else {
-            discountAmount = Number(coupon.discount_value);
+        let perUserOk = true;
+        if (coupon.per_user_limit != null && coupon.per_user_limit > 0) {
+          let q = supabase
+            .from("coupon_redemptions")
+            .select("id", { count: "exact", head: true })
+            .eq("coupon_id", coupon.id);
+          if (userId) q = q.eq("user_id", userId);
+          else q = q.ilike("customer_email", customer.email);
+          const { count } = await q;
+          perUserOk = (count || 0) < coupon.per_user_limit;
+        }
+
+        let firstOk = true;
+        if (coupon.first_purchase_only) {
+          let oq = supabase
+            .from("orders")
+            .select("id", { count: "exact", head: true })
+            .neq("status", "cancelado");
+          if (userId) oq = oq.eq("user_id", userId);
+          else oq = oq.ilike("customer_email", customer.email);
+          const { count } = await oq;
+          firstOk = (count || 0) === 0;
+        }
+
+        if (startsOk && expiresOk && usesOk && minOk && perUserOk && firstOk) {
+          const appliesTo = coupon.applies_to || "order";
+          const calc = (base: number) => {
+            if (base <= 0) return 0;
+            let d =
+              coupon.discount_type === "percent"
+                ? (base * Number(coupon.discount_value)) / 100
+                : Number(coupon.discount_value);
+            return Math.round(Math.min(d, base) * 100) / 100;
+          };
+
+          if (appliesTo === "order" || appliesTo === "both") {
+            discountOrder = calc(subtotal);
           }
-          discountAmount = Math.min(discountAmount, subtotal);
-          discountAmount = Math.round(discountAmount * 100) / 100;
+          if (appliesTo === "freight" || appliesTo === "both") {
+            discountFreight = calc(freightAmount);
+          }
+
           appliedCouponCode = coupon.code;
           couponId = coupon.id;
         }
       }
     }
 
-    const itemsTotal = Math.round((subtotal - discountAmount) * 100) / 100;
+    freightAmount = Math.max(0, freightAmount - discountFreight);
+    const itemsTotal = Math.round((subtotal - discountOrder) * 100) / 100;
     const total = Math.round((itemsTotal + freightAmount) * 100) / 100;
+    const discountAmount =
+      Math.round((discountOrder + discountFreight) * 100) / 100;
 
     let asaasItems;
-    if (discountAmount > 0 && subtotal > 0) {
+    if (discountOrder > 0 && subtotal > 0) {
       const factor = itemsTotal / subtotal;
       asaasItems = items.map((item) => {
         const unit = Number((item.price * factor).toFixed(2));
@@ -168,7 +204,6 @@ export async function POST(req: NextRequest) {
       }));
     }
 
-    // Linha de frete no Asaas
     if (freightAmount > 0) {
       asaasItems.push({
         name: truncate(`Frete ${freightCheck.label}`, 30),
@@ -310,6 +345,14 @@ export async function POST(req: NextRequest) {
               .update({ used_count: (c.used_count || 0) + 1 })
               .eq("id", couponId);
           }
+
+          await supabase.from("coupon_redemptions").insert({
+            coupon_id: couponId,
+            coupon_code: appliedCouponCode,
+            user_id: userId || null,
+            customer_email: customer.email,
+            order_id: order.id,
+          });
         }
       }
     } catch (dbErr) {
