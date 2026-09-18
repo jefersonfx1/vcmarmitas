@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { calcFreight } from "@/lib/cep";
+import { calcFreightSmart, FREE_FREIGHT_MIN } from "@/lib/cep";
 
 type CartItem = {
   id: string;
@@ -58,10 +58,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const freightCheck = calcFreight(
+    const subtotal = items.reduce(
+      (acc, item) => acc + item.price * item.quantity,
+      0
+    );
+
+    // Frete inteligente (distância real) + frete grátis a partir de R$ 349,90
+    const freightCheck = await calcFreightSmart(
       customer.postalCode,
       customer.city,
-      undefined
+      undefined,
+      subtotal
     );
     if (!freightCheck.available) {
       return NextResponse.json(
@@ -92,11 +99,6 @@ export async function POST(req: NextRequest) {
 
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-
-    const subtotal = items.reduce(
-      (acc, item) => acc + item.price * item.quantity,
-      0
-    );
 
     let discountOrder = 0;
     let discountFreight = 0;
@@ -159,7 +161,11 @@ export async function POST(req: NextRequest) {
           if (appliesTo === "order" || appliesTo === "both") {
             discountOrder = calc(subtotal);
           }
-          if (appliesTo === "freight" || appliesTo === "both") {
+          // Só aplica desconto de cupom no frete se ainda houver frete a pagar
+          if (
+            freightAmount > 0 &&
+            (appliesTo === "freight" || appliesTo === "both")
+          ) {
             discountFreight = calc(freightAmount);
           }
 
@@ -212,7 +218,22 @@ export async function POST(req: NextRequest) {
         value: Number(freightAmount.toFixed(2)),
         externalReference: "freight",
       });
+    } else if (freightCheck.freeShipping || subtotal >= FREE_FREIGHT_MIN) {
+      asaasItems.push({
+        name: "Frete grátis",
+        description: `Frete grátis em pedidos a partir de R$ ${FREE_FREIGHT_MIN.toFixed(2).replace(".", ",")}`,
+        quantity: 1,
+        value: 0.01, // Asaas exige valor > 0 em alguns fluxos; total real permanece sem frete
+        externalReference: "freight-free",
+      });
+      // Ajuste: se Asaas não aceitar 0.01 como simbólico, removemos o item.
+      // Preferimos não inflar o total — se value 0.01 for problema, comentamos o push.
     }
+
+    // Não adicionar item de frete grátis com valor 0.01 (evita cobrança extra)
+    asaasItems = asaasItems.filter(
+      (i) => i.externalReference !== "freight-free"
+    );
 
     const customerData: Record<string, string | number | undefined> = {
       name: truncate(customer.name, 100),
@@ -313,7 +334,13 @@ export async function POST(req: NextRequest) {
       if (orderError) {
         console.error("Erro ao salvar pedido:", orderError);
       } else if (order) {
-        const orderItems = items.map((item) => ({
+        const orderItems: {
+          order_id: string;
+          product_id: null;
+          product_name: string;
+          product_price: number;
+          quantity: number;
+        }[] = items.map((item) => ({
           order_id: order.id,
           product_id: null,
           product_name: item.name,
@@ -327,6 +354,14 @@ export async function POST(req: NextRequest) {
             product_id: null,
             product_name: `Frete — ${freightCheck.label}`,
             product_price: freightAmount,
+            quantity: 1,
+          });
+        } else if (freightCheck.freeShipping || subtotal >= FREE_FREIGHT_MIN) {
+          orderItems.push({
+            order_id: order.id,
+            product_id: null,
+            product_name: "Frete grátis",
+            product_price: 0,
             quantity: 1,
           });
         }
