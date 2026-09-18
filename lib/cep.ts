@@ -15,13 +15,23 @@ export type FreightResult = {
   zone: "brasilia" | "entorno" | "fora" | null;
   distanceKm?: number;
   message?: string;
+  freeShipping?: boolean;
 };
 
 /** Ponto de origem (cozinha / distribuição) — Recanto das Emas, Brasília/DF */
 export const ORIGIN_CEP = "72631127";
 
+/** Pedido a partir deste valor tem frete grátis */
+export const FREE_FREIGHT_MIN = 349.9;
+
 // Fallback coords aproximadas do Recanto das Emas (Brasília/DF)
 const ORIGIN_COORDS = { lat: -15.91, lng: -48.08 };
+
+/** Cache em memória de geocode (útil em instâncias warm do serverless) */
+const geocodeCache = new Map<string, { coords: Coords; at: number }>();
+const GEOCODE_TTL_MS = 1000 * 60 * 60 * 24; // 24h
+
+type Coords = { lat: number; lng: number };
 
 function onlyDigits(cep: string) {
   return cep.replace(/\D/g, "");
@@ -78,15 +88,20 @@ export async function fetchAddressByCep(
   };
 }
 
-type Coords = { lat: number; lng: number };
-
 async function geocodeCep(
   cep: string,
   city?: string,
   state?: string
 ): Promise<Coords | null> {
+  const digits = onlyDigits(cep);
+  const cacheKey = `${digits}|${city || ""}|${state || ""}`;
+
+  const cached = geocodeCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < GEOCODE_TTL_MS) {
+    return cached.coords;
+  }
+
   try {
-    const digits = onlyDigits(cep);
     const q =
       city && state
         ? `${digits}, ${city}, ${state}, Brasil`
@@ -102,10 +117,13 @@ async function geocodeCep(
     if (!res.ok) return null;
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) return null;
-    return {
+
+    const coords = {
       lat: parseFloat(data[0].lat),
       lng: parseFloat(data[0].lon),
     };
+    geocodeCache.set(cacheKey, { coords, at: Date.now() });
+    return coords;
   } catch {
     return null;
   }
@@ -153,7 +171,6 @@ function assertDeliveryArea(
   const brasilia = isBrasilia(city, state, digits);
   const entorno = isEntornoCity(city);
 
-  // Com cidade conhecida e não permitida
   if (city && !brasilia && !entorno) {
     return {
       available: false,
@@ -165,7 +182,6 @@ function assertDeliveryArea(
     };
   }
 
-  // Sem cidade: só libera se CEP parecer DF ou faixa Valparaíso/Novo Gama
   if (!city) {
     const n = parseInt(digits, 10);
     const maybeDf = n >= 70000000 && n <= 72799999;
@@ -182,7 +198,30 @@ function assertDeliveryArea(
     }
   }
 
-  return null; // ok
+  return null;
+}
+
+/**
+ * Aplica frete grátis quando o subtotal do pedido atinge o mínimo.
+ * Não altera disponibilidade — só zera o preço e marca freeShipping.
+ */
+export function applyFreeFreight(
+  freight: FreightResult,
+  orderSubtotal: number
+): FreightResult {
+  if (!freight.available) return freight;
+  if (orderSubtotal >= FREE_FREIGHT_MIN) {
+    return {
+      ...freight,
+      price: 0,
+      freeShipping: true,
+      label: freight.distanceKm
+        ? `${freight.label.replace(/ · ~\d+ km$/, "")} · Frete grátis`
+        : "Frete grátis",
+      message: `Frete grátis em pedidos a partir de R$ ${FREE_FREIGHT_MIN.toFixed(2).replace(".", ",")}`,
+    };
+  }
+  return { ...freight, freeShipping: false };
 }
 
 /** Fallback síncrono (sem geocode) */
@@ -214,17 +253,21 @@ export function calcFreight(
     label,
     zone: brasilia ? "brasilia" : "entorno",
     distanceKm: Math.round(approxKm * 10) / 10,
+    freeShipping: false,
   };
 }
 
-/** Cálculo com distância real (Nominatim + Haversine) */
+/** Cálculo com distância real (Nominatim + Haversine) + cache de coordenadas */
 export async function calcFreightSmart(
   cep: string,
   city?: string,
-  state?: string
+  state?: string,
+  orderSubtotal?: number
 ): Promise<FreightResult> {
   const basic = calcFreight(cep, city, state);
   if (!basic.available) return basic;
+
+  let result = basic;
 
   try {
     const dest = await geocodeCep(cep, city, state);
@@ -235,7 +278,7 @@ export async function calcFreightSmart(
     if (dest) {
       const km = haversineKm(origin, dest);
       const price = priceFromDistance(km);
-      return {
+      result = {
         ...basic,
         price,
         distanceKm: Math.round(km * 10) / 10,
@@ -243,10 +286,13 @@ export async function calcFreightSmart(
       };
     }
   } catch {
-    // fallback já em basic
+    // mantém basic
   }
 
-  return basic;
+  if (typeof orderSubtotal === "number") {
+    return applyFreeFreight(result, orderSubtotal);
+  }
+  return result;
 }
 
 export function formatCep(cep: string) {
