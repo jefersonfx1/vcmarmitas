@@ -17,11 +17,11 @@ export type FreightResult = {
   message?: string;
 };
 
-/** Ponto de origem (cozinha / distribuição) */
-export const ORIGIN_CEP = "72631127";
+/** Ponto de origem (cozinha / distribuição) — Recanto das Emas, Brasília/DF */
+export const ORIGIN_CEP = "72600100";
 
-// Fallback coords do CEP 72631-127 (região Valparaíso de Goiás)
-const ORIGIN_COORDS = { lat: -16.0685, lng: -47.9763 };
+// Fallback coords do Recanto das Emas (Brasília/DF)
+const ORIGIN_COORDS = { lat: -15.91, lng: -48.08 };
 
 function onlyDigits(cep: string) {
   return cep.replace(/\D/g, "");
@@ -124,7 +124,7 @@ function haversineKm(a: Coords, b: Coords): number {
 }
 
 /**
- * Base R$ 8 + R$ 1,20/km a partir da origem 72631-127
+ * Base R$ 8 + R$ 1,20/km a partir do Recanto das Emas (Brasília/DF)
  * Mínimo R$ 10 | Máximo R$ 45
  */
 function priceFromDistance(km: number): number {
@@ -229,7 +229,7 @@ export async function calcFreightSmart(
   try {
     const dest = await geocodeCep(cep, city, state);
     const origin =
-      (await geocodeCep(ORIGIN_CEP, "Valparaíso de Goiás", "GO")) ||
+      (await geocodeCep(ORIGIN_CEP, "Recanto das Emas", "DF")) ||
       ORIGIN_COORDS;
 
     if (dest) {
