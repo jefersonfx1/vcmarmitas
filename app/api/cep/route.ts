@@ -3,11 +3,16 @@ import { fetchAddressByCep, calcFreightSmart } from "@/lib/cep";
 
 export async function GET(req: NextRequest) {
   const cep = req.nextUrl.searchParams.get("cep") || "";
+  const orderTotalParam = req.nextUrl.searchParams.get("orderTotal");
   const digits = cep.replace(/\D/g, "");
 
   if (digits.length !== 8) {
     return NextResponse.json({ error: "CEP deve ter 8 dígitos" }, { status: 400 });
   }
+
+  const orderSubtotal = orderTotalParam
+    ? Number.parseFloat(orderTotalParam)
+    : undefined;
 
   try {
     const address = await fetchAddressByCep(digits);
@@ -18,7 +23,8 @@ export async function GET(req: NextRequest) {
     const freight = await calcFreightSmart(
       address.cep,
       address.city,
-      address.state
+      address.state,
+      Number.isFinite(orderSubtotal) ? orderSubtotal : undefined
     );
 
     return NextResponse.json({
