@@ -18,9 +18,9 @@ export type FreightResult = {
 };
 
 /** Ponto de origem (cozinha / distribuição) — Recanto das Emas, Brasília/DF */
-export const ORIGIN_CEP = "72600100";
+export const ORIGIN_CEP = "72631127";
 
-// Fallback coords do Recanto das Emas (Brasília/DF)
+// Fallback coords aproximadas do Recanto das Emas (Brasília/DF)
 const ORIGIN_COORDS = { lat: -15.91, lng: -48.08 };
 
 function onlyDigits(cep: string) {
