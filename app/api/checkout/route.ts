@@ -63,12 +63,14 @@ export async function POST(req: NextRequest) {
       0
     );
 
-    // Frete inteligente (distância real) + frete grátis a partir de R$ 349,90
+    // Frete inteligente + proximidade (bairro/CEP) + frete grátis a partir de R$ 349,90
     const freightCheck = await calcFreightSmart(
       customer.postalCode,
       customer.city,
       undefined,
-      subtotal
+      subtotal,
+      customer.province,
+      customer.address
     );
     if (!freightCheck.available) {
       return NextResponse.json(
@@ -161,7 +163,6 @@ export async function POST(req: NextRequest) {
           if (appliesTo === "order" || appliesTo === "both") {
             discountOrder = calc(subtotal);
           }
-          // Só aplica desconto de cupom no frete se ainda houver frete a pagar
           if (
             freightAmount > 0 &&
             (appliesTo === "freight" || appliesTo === "both")
@@ -218,22 +219,7 @@ export async function POST(req: NextRequest) {
         value: Number(freightAmount.toFixed(2)),
         externalReference: "freight",
       });
-    } else if (freightCheck.freeShipping || subtotal >= FREE_FREIGHT_MIN) {
-      asaasItems.push({
-        name: "Frete grátis",
-        description: `Frete grátis em pedidos a partir de R$ ${FREE_FREIGHT_MIN.toFixed(2).replace(".", ",")}`,
-        quantity: 1,
-        value: 0.01, // Asaas exige valor > 0 em alguns fluxos; total real permanece sem frete
-        externalReference: "freight-free",
-      });
-      // Ajuste: se Asaas não aceitar 0.01 como simbólico, removemos o item.
-      // Preferimos não inflar o total — se value 0.01 for problema, comentamos o push.
     }
-
-    // Não adicionar item de frete grátis com valor 0.01 (evita cobrança extra)
-    asaasItems = asaasItems.filter(
-      (i) => i.externalReference !== "freight-free"
-    );
 
     const customerData: Record<string, string | number | undefined> = {
       name: truncate(customer.name, 100),
