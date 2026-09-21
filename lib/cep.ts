@@ -33,10 +33,10 @@ export const MAX_FREIGHT = 45;
 /** Abaixo desta distância (km), aplica frete mínimo e trata como entrega local */
 const LOCAL_DISTANCE_KM = 2;
 
-// Coords fixas da origem — NÃO geocodificar a origem via Nominatim (gera inconsistência)
+// Coords fixas da origem — NÃO geocodificar a origem via Nominatim
 const ORIGIN_COORDS = { lat: -15.91, lng: -48.08 };
 
-/** Cache em memória de geocode (útil em instâncias warm do serverless) */
+/** Cache em memória de geocode */
 const geocodeCache = new Map<string, { coords: Coords; at: number }>();
 const GEOCODE_TTL_MS = 1000 * 60 * 60 * 24; // 24h
 
@@ -54,7 +54,6 @@ function normalizeCity(city: string) {
     .trim();
 }
 
-/** Únicas cidades do entorno atendidas */
 const ENTORNO_ALLOWED = ["valparaiso de goias", "novo gama"];
 
 function isEntornoCity(city: string): boolean {
@@ -72,6 +71,27 @@ function isBrasilia(city: string, state: string, cepDigits: string): boolean {
   if (uf === "DF") return true;
   if (c.includes("brasilia")) return true;
   if (uf !== "GO" && n >= 70000000 && n <= 72799999) return true;
+  return false;
+}
+
+/**
+ * CEP vizinho / mesmo setor / mesmo bairro da cozinha → entrega local.
+ * Nominatim costuma errar CEPs próximos (ex.: 72631-128 vira ~24 km).
+ */
+function isNearOrigin(digits: string, neighborhood?: string): boolean {
+  if (digits === ORIGIN_CEP) return true;
+
+  // Mesmo prefixo de 5 dígitos (setor do Correios) — ex.: 72631-xxx
+  if (digits.slice(0, 5) === ORIGIN_CEP.slice(0, 5)) return true;
+
+  // Delta numérico pequeno (CEP quase sequencial)
+  const delta = Math.abs(parseInt(digits, 10) - parseInt(ORIGIN_CEP, 10));
+  if (delta <= 100) return true;
+
+  // Mesmo bairro da cozinha
+  const bairro = normalizeCity(neighborhood || "");
+  if (bairro.includes("recanto das emas")) return true;
+
   return false;
 }
 
@@ -96,19 +116,26 @@ export async function fetchAddressByCep(
   };
 }
 
-async function geocodeCep(
-  cep: string,
-  city?: string,
-  state?: string
-): Promise<Coords | null> {
-  const digits = onlyDigits(cep);
+async function geocodeAddress(opts: {
+  cep: string;
+  street?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+}): Promise<Coords | null> {
+  const digits = onlyDigits(opts.cep);
 
-  // CEP de origem: sempre as coords fixas (evita erro de 20+ km no mesmo CEP)
-  if (digits === ORIGIN_CEP) {
+  if (digits === ORIGIN_CEP || isNearOrigin(digits, opts.neighborhood)) {
     return ORIGIN_COORDS;
   }
 
-  const cacheKey = `${digits}|${city || ""}|${state || ""}`;
+  const cacheKey = [
+    digits,
+    opts.street || "",
+    opts.neighborhood || "",
+    opts.city || "",
+    opts.state || "",
+  ].join("|");
 
   const cached = geocodeCache.get(cacheKey);
   if (cached && Date.now() - cached.at < GEOCODE_TTL_MS) {
@@ -116,10 +143,16 @@ async function geocodeCep(
   }
 
   try {
-    const q =
-      city && state
-        ? `${digits}, ${city}, ${state}, Brasil`
-        : `${digits}, Brasil`;
+    // Query mais específica → melhor precisão no Nominatim
+    const parts = [
+      opts.street,
+      opts.neighborhood,
+      opts.city,
+      opts.state,
+      digits,
+      "Brasil",
+    ].filter(Boolean);
+    const q = parts.join(", ");
 
     const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`;
     const res = await fetch(url, {
@@ -162,7 +195,6 @@ function haversineKm(a: Coords, b: Coords): number {
 function priceFromDistance(km: number): number {
   const base = 8;
   const perKm = 1.2;
-  // Distância local / CEP de origem → frete mínimo
   const effectiveKm = Math.max(0, km);
   if (effectiveKm <= LOCAL_DISTANCE_KM) {
     return MIN_FREIGHT;
@@ -183,6 +215,20 @@ function zoneLabel(city: string, state: string, digits: string): {
   return {
     label: isEntornoCity(city) ? city || "Entorno" : "Valparaíso / Novo Gama",
     zone: "entorno",
+  };
+}
+
+function localFreightResult(
+  label: string,
+  zone: "brasilia" | "entorno"
+): FreightResult {
+  return {
+    available: true,
+    price: MIN_FREIGHT,
+    label: `${label} · entrega local`,
+    zone,
+    distanceKm: 0,
+    freeShipping: false,
   };
 }
 
@@ -234,9 +280,6 @@ function assertDeliveryArea(
   return null;
 }
 
-/**
- * Aplica frete grátis quando o subtotal do pedido atinge o mínimo.
- */
 export function applyFreeFreight(
   freight: FreightResult,
   orderSubtotal: number
@@ -248,7 +291,10 @@ export function applyFreeFreight(
       price: 0,
       freeShipping: true,
       label: freight.distanceKm != null
-        ? `${String(freight.label).replace(/ · ~[\d.]+ km$/, "").replace(/ · Frete grátis$/, "")} · Frete grátis`
+        ? `${String(freight.label)
+            .replace(/ · ~[\d.]+ km$/, "")
+            .replace(/ · entrega local$/, "")
+            .replace(/ · Frete grátis$/, "")} · Frete grátis`
         : "Frete grátis",
       message: `Frete grátis em pedidos a partir de R$ ${FREE_FREIGHT_MIN.toFixed(2).replace(".", ",")}`,
     };
@@ -260,7 +306,8 @@ export function applyFreeFreight(
 export function calcFreight(
   cep: string,
   city?: string,
-  state?: string
+  state?: string,
+  neighborhood?: string
 ): FreightResult {
   const digits = onlyDigits(cep);
   const blocked = assertDeliveryArea(digits, city || "", state || "");
@@ -268,59 +315,47 @@ export function calcFreight(
 
   const { label, zone } = zoneLabel(city || "", state || "", digits);
 
-  // Mesmo CEP da cozinha → distância 0, frete mínimo
-  if (digits === ORIGIN_CEP) {
-    return {
-      available: true,
-      price: MIN_FREIGHT,
-      label: `${label} · entrega local`,
-      zone,
-      distanceKm: 0,
-      freeShipping: false,
-    };
+  if (isNearOrigin(digits, neighborhood)) {
+    return localFreightResult(label, zone);
   }
 
+  // Estimativa grosseira só como fallback (geocode costuma sobrescrever)
   const origin = parseInt(ORIGIN_CEP, 10);
   const dest = parseInt(digits, 10);
   const cepDelta = Math.abs(dest - origin);
-  // Evita forçar mínimo de 2 km quando CEPs são muito próximos
-  const approxKm =
-    cepDelta === 0 ? 0 : Math.min(80, Math.max(0.5, cepDelta / 150));
+  // Escala mais conservadora para DF (CEPs próximos ≠ dezenas de km)
+  const approxKm = Math.min(45, Math.max(3, Math.sqrt(cepDelta) / 8));
   const price = priceFromDistance(approxKm);
 
   return {
     available: true,
     price,
-    label:
-      approxKm <= LOCAL_DISTANCE_KM
-        ? `${label} · entrega local`
-        : `${label} · ~${Math.round(approxKm)} km`,
+    label: `${label} · ~${Math.round(approxKm)} km`,
     zone,
     distanceKm: Math.round(approxKm * 10) / 10,
     freeShipping: false,
   };
 }
 
-/** Cálculo com distância real (Nominatim + Haversine) + cache de coordenadas */
+/** Cálculo com distância real + regras de proximidade */
 export async function calcFreightSmart(
   cep: string,
   city?: string,
   state?: string,
-  orderSubtotal?: number
+  orderSubtotal?: number,
+  neighborhood?: string,
+  street?: string
 ): Promise<FreightResult> {
-  const basic = calcFreight(cep, city, state);
+  const digits = onlyDigits(cep);
+  const basic = calcFreight(cep, city, state, neighborhood);
   if (!basic.available) return basic;
 
-  const digits = onlyDigits(cep);
-
-  // CEP de origem: não precisa geocode
-  if (digits === ORIGIN_CEP) {
-    const result = {
-      ...basic,
-      price: MIN_FREIGHT,
-      distanceKm: 0,
-      label: `${basic.label.replace(/ · .*$/, "")} · entrega local`,
-    };
+  // Vizinho / mesmo setor / Recanto das Emas → sempre mínimo
+  if (isNearOrigin(digits, neighborhood)) {
+    const result = localFreightResult(
+      basic.label.replace(/ · .*$/, "") || "Brasília (DF)",
+      basic.zone || "brasilia"
+    );
     if (typeof orderSubtotal === "number") {
       return applyFreeFreight(result, orderSubtotal);
     }
@@ -330,17 +365,27 @@ export async function calcFreightSmart(
   let result = basic;
 
   try {
-    const dest = await geocodeCep(cep, city, state);
-    // Origem sempre fixa — evita divergência do Nominatim
+    const dest = await geocodeAddress({
+      cep: digits,
+      street,
+      neighborhood,
+      city,
+      state,
+    });
     const origin = ORIGIN_COORDS;
 
     if (dest) {
       let km = haversineKm(origin, dest);
 
-      // Proteção: se o geocode “viajar” demais para CEPs da mesma região, limita
-      // (Nominatim às vezes devolve ponto genérico longe do CEP real)
-      if (km > 80) {
-        km = basic.distanceKm ?? 30;
+      // Nominatim às vezes devolve ponto genérico longe demais
+      if (km > 60) {
+        km = basic.distanceKm ?? 25;
+      }
+
+      // Se geocode ainda “inventou” distância alta para CEP relativamente próximo, corta
+      const cepDelta = Math.abs(parseInt(digits, 10) - parseInt(ORIGIN_CEP, 10));
+      if (cepDelta < 5000 && km > 15) {
+        km = Math.min(km, 8);
       }
 
       const price = priceFromDistance(km);
