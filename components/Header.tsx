@@ -8,7 +8,13 @@ import { useCart } from "@/lib/cart-store";
 export default function Header() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  // Evita hydration mismatch: carrinho só existe no client (localStorage)
+  const [mounted, setMounted] = useState(false);
   const totalItems = useCart((s) => s.totalItems);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -16,6 +22,8 @@ export default function Header() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  const count = mounted ? totalItems() : 0;
 
   return (
     <header
@@ -57,9 +65,9 @@ export default function Header() {
               aria-label="Carrinho"
             >
               <ShoppingCart className="w-5 h-5" />
-              {totalItems() > 0 && (
+              {count > 0 && (
                 <span className="absolute top-1 right-1 bg-primary-600 text-white text-[10px] font-bold min-w-[18px] h-[18px] rounded-full flex items-center justify-center shadow-sm ring-2 ring-white animate-fade-in">
-                  {totalItems()}
+                  {count}
                 </span>
               )}
             </Link>
