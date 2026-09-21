@@ -33,7 +33,9 @@ export async function GET(req: NextRequest) {
       address.cep,
       address.city,
       address.state,
-      Number.isFinite(orderSubtotal) ? orderSubtotal : undefined
+      Number.isFinite(orderSubtotal) ? orderSubtotal : undefined,
+      address.neighborhood,
+      address.street
     );
 
     return NextResponse.json(
