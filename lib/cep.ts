@@ -24,7 +24,16 @@ export const ORIGIN_CEP = "72631127";
 /** Pedido a partir deste valor tem frete grátis */
 export const FREE_FREIGHT_MIN = 349.9;
 
-// Fallback coords aproximadas do Recanto das Emas (Brasília/DF)
+/** Frete mínimo (mesmo no CEP de origem / distâncias curtas) */
+export const MIN_FREIGHT = 10;
+
+/** Frete máximo */
+export const MAX_FREIGHT = 45;
+
+/** Abaixo desta distância (km), aplica frete mínimo e trata como entrega local */
+const LOCAL_DISTANCE_KM = 2;
+
+// Coords fixas da origem — NÃO geocodificar a origem via Nominatim (gera inconsistência)
 const ORIGIN_COORDS = { lat: -15.91, lng: -48.08 };
 
 /** Cache em memória de geocode (útil em instâncias warm do serverless) */
@@ -62,7 +71,6 @@ function isBrasilia(city: string, state: string, cepDigits: string): boolean {
   const c = normalizeCity(city);
   if (uf === "DF") return true;
   if (c.includes("brasilia")) return true;
-  // Faixa típica DF (evita confusão com GO 728xx+)
   if (uf !== "GO" && n >= 70000000 && n <= 72799999) return true;
   return false;
 }
@@ -94,6 +102,12 @@ async function geocodeCep(
   state?: string
 ): Promise<Coords | null> {
   const digits = onlyDigits(cep);
+
+  // CEP de origem: sempre as coords fixas (evita erro de 20+ km no mesmo CEP)
+  if (digits === ORIGIN_CEP) {
+    return ORIGIN_COORDS;
+  }
+
   const cacheKey = `${digits}|${city || ""}|${state || ""}`;
 
   const cached = geocodeCache.get(cacheKey);
@@ -148,9 +162,28 @@ function haversineKm(a: Coords, b: Coords): number {
 function priceFromDistance(km: number): number {
   const base = 8;
   const perKm = 1.2;
-  let price = base + km * perKm;
-  price = Math.max(10, Math.min(45, price));
+  // Distância local / CEP de origem → frete mínimo
+  const effectiveKm = Math.max(0, km);
+  if (effectiveKm <= LOCAL_DISTANCE_KM) {
+    return MIN_FREIGHT;
+  }
+  let price = base + effectiveKm * perKm;
+  price = Math.max(MIN_FREIGHT, Math.min(MAX_FREIGHT, price));
   return Math.round(price * 100) / 100;
+}
+
+function zoneLabel(city: string, state: string, digits: string): {
+  label: string;
+  zone: "brasilia" | "entorno";
+} {
+  const brasilia = isBrasilia(city, state, digits);
+  if (brasilia) {
+    return { label: "Brasília (DF)", zone: "brasilia" };
+  }
+  return {
+    label: isEntornoCity(city) ? city || "Entorno" : "Valparaíso / Novo Gama",
+    zone: "entorno",
+  };
 }
 
 function assertDeliveryArea(
@@ -203,7 +236,6 @@ function assertDeliveryArea(
 
 /**
  * Aplica frete grátis quando o subtotal do pedido atinge o mínimo.
- * Não altera disponibilidade — só zera o preço e marca freeShipping.
  */
 export function applyFreeFreight(
   freight: FreightResult,
@@ -215,8 +247,8 @@ export function applyFreeFreight(
       ...freight,
       price: 0,
       freeShipping: true,
-      label: freight.distanceKm
-        ? `${freight.label.replace(/ · ~\d+ km$/, "")} · Frete grátis`
+      label: freight.distanceKm != null
+        ? `${String(freight.label).replace(/ · ~[\d.]+ km$/, "").replace(/ · Frete grátis$/, "")} · Frete grátis`
         : "Frete grátis",
       message: `Frete grátis em pedidos a partir de R$ ${FREE_FREIGHT_MIN.toFixed(2).replace(".", ",")}`,
     };
@@ -234,24 +266,36 @@ export function calcFreight(
   const blocked = assertDeliveryArea(digits, city || "", state || "");
   if (blocked) return blocked;
 
+  const { label, zone } = zoneLabel(city || "", state || "", digits);
+
+  // Mesmo CEP da cozinha → distância 0, frete mínimo
+  if (digits === ORIGIN_CEP) {
+    return {
+      available: true,
+      price: MIN_FREIGHT,
+      label: `${label} · entrega local`,
+      zone,
+      distanceKm: 0,
+      freeShipping: false,
+    };
+  }
+
   const origin = parseInt(ORIGIN_CEP, 10);
   const dest = parseInt(digits, 10);
   const cepDelta = Math.abs(dest - origin);
-  const approxKm = Math.min(80, Math.max(2, cepDelta / 150));
+  // Evita forçar mínimo de 2 km quando CEPs são muito próximos
+  const approxKm =
+    cepDelta === 0 ? 0 : Math.min(80, Math.max(0.5, cepDelta / 150));
   const price = priceFromDistance(approxKm);
-
-  const brasilia = isBrasilia(city || "", state || "", digits);
-  const label = brasilia
-    ? "Brasília (DF)"
-    : isEntornoCity(city || "")
-      ? city || "Entorno"
-      : "Valparaíso / Novo Gama";
 
   return {
     available: true,
     price,
-    label,
-    zone: brasilia ? "brasilia" : "entorno",
+    label:
+      approxKm <= LOCAL_DISTANCE_KM
+        ? `${label} · entrega local`
+        : `${label} · ~${Math.round(approxKm)} km`,
+    zone,
     distanceKm: Math.round(approxKm * 10) / 10,
     freeShipping: false,
   };
@@ -267,22 +311,49 @@ export async function calcFreightSmart(
   const basic = calcFreight(cep, city, state);
   if (!basic.available) return basic;
 
+  const digits = onlyDigits(cep);
+
+  // CEP de origem: não precisa geocode
+  if (digits === ORIGIN_CEP) {
+    const result = {
+      ...basic,
+      price: MIN_FREIGHT,
+      distanceKm: 0,
+      label: `${basic.label.replace(/ · .*$/, "")} · entrega local`,
+    };
+    if (typeof orderSubtotal === "number") {
+      return applyFreeFreight(result, orderSubtotal);
+    }
+    return result;
+  }
+
   let result = basic;
 
   try {
     const dest = await geocodeCep(cep, city, state);
-    const origin =
-      (await geocodeCep(ORIGIN_CEP, "Recanto das Emas", "DF")) ||
-      ORIGIN_COORDS;
+    // Origem sempre fixa — evita divergência do Nominatim
+    const origin = ORIGIN_COORDS;
 
     if (dest) {
-      const km = haversineKm(origin, dest);
+      let km = haversineKm(origin, dest);
+
+      // Proteção: se o geocode “viajar” demais para CEPs da mesma região, limita
+      // (Nominatim às vezes devolve ponto genérico longe do CEP real)
+      if (km > 80) {
+        km = basic.distanceKm ?? 30;
+      }
+
       const price = priceFromDistance(km);
+      const roundedKm = Math.round(km * 10) / 10;
+
       result = {
         ...basic,
         price,
-        distanceKm: Math.round(km * 10) / 10,
-        label: `${basic.label} · ~${Math.round(km)} km`,
+        distanceKm: roundedKm,
+        label:
+          roundedKm <= LOCAL_DISTANCE_KM
+            ? `${basic.label.replace(/ · .*$/, "")} · entrega local`
+            : `${basic.label.replace(/ · .*$/, "")} · ~${Math.round(km)} km`,
       };
     }
   } catch {
