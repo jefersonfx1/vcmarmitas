@@ -46,7 +46,6 @@ export async function GET(req: NextRequest) {
           price: freight.price,
           label: freight.label,
           zone: freight.zone,
-          distanceKm: freight.distanceKm,
           message: freight.message,
           freeShipping: freight.freeShipping ?? false,
         },

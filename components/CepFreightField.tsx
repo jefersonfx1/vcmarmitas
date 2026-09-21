@@ -10,7 +10,7 @@ export type FreightInfo = {
   label: string;
   message?: string;
   freeShipping?: boolean;
-  distanceKm?: number;
+  zone?: string | null;
 };
 
 type Props = {
@@ -90,7 +90,7 @@ export default function CepFreightField({
           label: data.freight?.label || "",
           message: data.freight?.message,
           freeShipping: Boolean(data.freight?.freeShipping),
-          distanceKm: data.freight?.distanceKm,
+          zone: data.freight?.zone,
         });
         onCouponReset?.();
       } catch (err) {
@@ -132,7 +132,6 @@ export default function CepFreightField({
     };
   }, []);
 
-  // Busca inicial se CEP já veio preenchido (perfil)
   useEffect(() => {
     const digits = cep.replace(/\D/g, "");
     if (digits.length === 8 && !freight && !cepLoading) {
@@ -144,7 +143,10 @@ export default function CepFreightField({
   return (
     <div className="sm:col-span-2">
       <label className="block text-sm font-medium text-gray-700 mb-1">
-        CEP * {cepLoading && <span className="text-gray-400">(calculando frete...)</span>}
+        CEP *{" "}
+        {cepLoading && (
+          <span className="text-gray-400">(calculando frete...)</span>
+        )}
       </label>
       <input
         type="text"
@@ -166,7 +168,7 @@ export default function CepFreightField({
       )}
       {!cepLoading && freight && (
         <p
-          key={`${cep}-${freight.price}-${freight.available}-${freight.distanceKm ?? ""}`}
+          key={`${cep}-${freight.price}-${freight.available}`}
           className={`text-xs mt-1.5 font-medium ${
             freight.available ? "text-green-700" : "text-red-600"
           }`}
