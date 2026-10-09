@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchAddressByCep, calcFreightSmart } from "@/lib/cep";
+import { resolveFreightFromCep } from "@/lib/cep";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -21,22 +21,24 @@ export async function GET(req: NextRequest) {
     : undefined;
 
   try {
-    const address = await fetchAddressByCep(digits);
+    const { address, freight } = await resolveFreightFromCep(
+      digits,
+      Number.isFinite(orderSubtotal) ? orderSubtotal : undefined
+    );
+
+    if (!address && !freight.available && freight.zone === null) {
+      return NextResponse.json(
+        { error: freight.message || "CEP não encontrado" },
+        { status: 404, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
     if (!address) {
       return NextResponse.json(
         { error: "CEP não encontrado" },
         { status: 404, headers: { "Cache-Control": "no-store" } }
       );
     }
-
-    const freight = await calcFreightSmart(
-      address.cep,
-      address.city,
-      address.state,
-      Number.isFinite(orderSubtotal) ? orderSubtotal : undefined,
-      address.neighborhood,
-      address.street
-    );
 
     return NextResponse.json(
       {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { calcFreightSmart, FREE_FREIGHT_MIN } from "@/lib/cep";
+import { resolveFreightFromCep, FREE_FREIGHT_MIN } from "@/lib/cep";
 
 type CartItem = {
   id: string;
@@ -63,25 +63,26 @@ export async function POST(req: NextRequest) {
       0
     );
 
-    // Frete inteligente + proximidade (bairro/CEP) + frete grátis a partir de R$ 349,90
-    const freightCheck = await calcFreightSmart(
-      customer.postalCode,
-      customer.city,
-      undefined,
-      subtotal,
-      customer.province,
-      customer.address
-    );
+    // Frete SEMPRE recalculado no servidor a partir do CEP (ViaCEP/BrasilAPI)
+    // Não confia no valor enviado pelo cliente.
+    const { address: resolved, freight: freightCheck } =
+      await resolveFreightFromCep(customer.postalCode, subtotal);
+
     if (!freightCheck.available) {
       return NextResponse.json(
         {
           error:
             freightCheck.message ||
-            "Não entregamos neste CEP. Atendemos Brasília, Valparaíso e Novo Gama.",
+            "Não entregamos neste CEP. Atendemos Brasília (DF), Valparaíso de Goiás e Novo Gama.",
         },
         { status: 400 }
       );
     }
+
+    // Completa cidade/bairro a partir do provedor se o form veio incompleto
+    const city = customer.city || resolved?.city || "";
+    const neighborhood =
+      customer.province || resolved?.neighborhood || "";
 
     let freightAmount = freightCheck.price;
 
@@ -231,9 +232,7 @@ export async function POST(req: NextRequest) {
       complement: customer.complement
         ? truncate(customer.complement, 50)
         : undefined,
-      province: customer.province
-        ? truncate(customer.province, 50)
-        : undefined,
+      province: neighborhood ? truncate(neighborhood, 50) : undefined,
       postalCode: customer.postalCode?.replace(/\D/g, "") || undefined,
     };
 
@@ -304,8 +303,8 @@ export async function POST(req: NextRequest) {
           address_street: customer.address,
           address_number: customer.addressNumber,
           address_complement: customer.complement || null,
-          address_neighborhood: customer.province || null,
-          address_city: customer.city || null,
+          address_neighborhood: neighborhood || null,
+          address_city: city || null,
           address_cep: customer.postalCode.replace(/\D/g, ""),
           total: Number(total.toFixed(2)),
           status: "pendente",
@@ -384,6 +383,12 @@ export async function POST(req: NextRequest) {
       id: checkoutId,
       link,
       status: data.status,
+      freight: {
+        zone: freightCheck.zone,
+        price: freightAmount,
+        label: freightCheck.label,
+        freeShipping: freightCheck.freeShipping ?? false,
+      },
     });
   } catch (err) {
     console.error("Checkout API error:", err);
