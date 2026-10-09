@@ -1,28 +1,56 @@
 name: Supabase Keep Alive
 
-# Mantém o projeto Free do Supabase ativo (evita pausa por inatividade após ~7 dias)
+# Mantém o projeto Free do Supabase ativo.
+# O Free pausa após ~7 dias SEM nenhuma requisição à API.
+# Ping diário garante atividade bem antes do limite.
 on:
   schedule:
-    # Segunda e Quinta às 12:00 UTC (≈ 09:00 Brasília)
-    - cron: "0 12 * * 1,4"
-  workflow_dispatch: # permite rodar manualmente em Actions → Run workflow
+    # Todo dia às 12:00 UTC (≈ 09:00 Brasília)
+    - cron: "0 12 * * *"
+  workflow_dispatch: # Actions → Supabase Keep Alive → Run workflow
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST API
+      - name: Validar secrets
         run: |
-          echo "Pinging Supabase to prevent project pause..."
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
-          echo "HTTP status: $HTTP_CODE"
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
-            echo "✅ Ping successful"
-            exit 0
-          else
-            echo "❌ Ping failed with status $HTTP_CODE"
+          if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "❌ Secrets SUPABASE_URL ou SUPABASE_ANON_KEY não configurados."
+            echo "Repo → Settings → Secrets and variables → Actions"
             exit 1
           fi
+          echo "✅ Secrets presentes"
+
+      - name: Ping Supabase REST API
+        run: |
+          set -e
+          URL="${{ secrets.SUPABASE_URL }}"
+          KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+
+          echo "Pinging Supabase (ciclo Free ~7 dias sem request)..."
+          echo "Target: ${URL}/rest/v1/"
+
+          # Preferência: consulta leve numa tabela pública (conta como atividade real)
+          HTTP_CODE=$(curl -sS -o /tmp/sb_body.txt -w "%{http_code}" \
+            --connect-timeout 15 --max-time 30 \
+            "${URL}/rest/v1/products?select=id&limit=1" \
+            -H "apikey: ${KEY}" \
+            -H "Authorization: Bearer ${KEY}" \
+            -H "Accept: application/json" || echo "000")
+
+          echo "HTTP status: $HTTP_CODE"
+          if [ -f /tmp/sb_body.txt ]; then
+            echo "Body (trunc): $(head -c 200 /tmp/sb_body.txt)"
+          fi
+
+          # 2xx / 3xx / 4xx = API no ar (projeto ativo). 5xx ou 000 = falha.
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
+            echo "✅ Ping OK — projeto contou atividade (dentro do ciclo de 7 dias)."
+            exit 0
+          fi
+
+          echo "❌ Ping falhou (status $HTTP_CODE)."
+          echo "Se o projeto estiver pausado no Free, restaure no Dashboard do Supabase."
+          echo "O keep-alive NÃO despausa sozinho — só evita nova pausa enquanto o projeto estiver ativo."
+          exit 1
