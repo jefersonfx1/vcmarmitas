@@ -26,13 +26,6 @@ export async function GET(req: NextRequest) {
       Number.isFinite(orderSubtotal) ? orderSubtotal : undefined
     );
 
-    if (!address && !freight.available && freight.zone === null) {
-      return NextResponse.json(
-        { error: freight.message || "CEP não encontrado" },
-        { status: 404, headers: { "Cache-Control": "no-store" } }
-      );
-    }
-
     if (!address) {
       return NextResponse.json(
         { error: "CEP não encontrado" },
@@ -50,6 +43,7 @@ export async function GET(req: NextRequest) {
           zone: freight.zone,
           message: freight.message,
           freeShipping: freight.freeShipping ?? false,
+          distanceKm: freight.distanceKm ?? null,
         },
       },
       {
