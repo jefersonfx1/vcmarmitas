@@ -1,13 +1,12 @@
 name: Supabase Keep Alive
 
-# Mantém o projeto Free do Supabase ativo.
-# O Free pausa após ~7 dias SEM nenhuma requisição à API.
-# Ping diário garante atividade bem antes do limite.
+# Mantém o projeto Free do Supabase ativo (~7 dias sem request = pausa).
+# Ping diário + retries. Não despausa sozinho se o projeto já estiver pausado.
 on:
   schedule:
-    # Todo dia às 12:00 UTC (≈ 09:00 Brasília)
+    # Todo dia 12:00 UTC (≈ 09:00 Brasília)
     - cron: "0 12 * * *"
-  workflow_dispatch: # Actions → Supabase Keep Alive → Run workflow
+  workflow_dispatch:
 
 jobs:
   ping:
@@ -16,41 +15,77 @@ jobs:
       - name: Validar secrets
         run: |
           if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
-            echo "❌ Secrets SUPABASE_URL ou SUPABASE_ANON_KEY não configurados."
+            echo "❌ Configure SUPABASE_URL e SUPABASE_ANON_KEY"
             echo "Repo → Settings → Secrets and variables → Actions"
             exit 1
           fi
           echo "✅ Secrets presentes"
 
-      - name: Ping Supabase REST API
+      - name: Ping Supabase (com retry)
+        env:
+          RAW_URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          set -e
-          URL="${{ secrets.SUPABASE_URL }}"
-          KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+          set +e
 
-          echo "Pinging Supabase (ciclo Free ~7 dias sem request)..."
-          echo "Target: ${URL}/rest/v1/"
+          # Remove barra final e espaços
+          URL=$(echo "$RAW_URL" | sed 's:/*$::' | tr -d '[:space:]')
 
-          # Preferência: consulta leve numa tabela pública (conta como atividade real)
-          HTTP_CODE=$(curl -sS -o /tmp/sb_body.txt -w "%{http_code}" \
-            --connect-timeout 15 --max-time 30 \
-            "${URL}/rest/v1/products?select=id&limit=1" \
-            -H "apikey: ${KEY}" \
-            -H "Authorization: Bearer ${KEY}" \
-            -H "Accept: application/json" || echo "000")
+          echo "Target base: $URL"
+          echo "Key length: ${#KEY}"
 
-          echo "HTTP status: $HTTP_CODE"
-          if [ -f /tmp/sb_body.txt ]; then
-            echo "Body (trunc): $(head -c 200 /tmp/sb_body.txt)"
-          fi
+          # Endpoints leves — qualquer 2xx–4xx conta como "projeto ativo"
+          ENDPOINTS=(
+            "/rest/v1/"
+            "/auth/v1/health"
+            "/rest/v1/profiles?select=id&limit=1"
+          )
 
-          # 2xx / 3xx / 4xx = API no ar (projeto ativo). 5xx ou 000 = falha.
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
-            echo "✅ Ping OK — projeto contou atividade (dentro do ciclo de 7 dias)."
-            exit 0
-          fi
+          MAX_ATTEMPTS=5
+          SLEEP_SECS=20
 
-          echo "❌ Ping falhou (status $HTTP_CODE)."
-          echo "Se o projeto estiver pausado no Free, restaure no Dashboard do Supabase."
-          echo "O keep-alive NÃO despausa sozinho — só evita nova pausa enquanto o projeto estiver ativo."
+          for attempt in $(seq 1 $MAX_ATTEMPTS); do
+            echo ""
+            echo "—— Tentativa $attempt/$MAX_ATTEMPTS ——"
+
+            for path in "${ENDPOINTS[@]}"; do
+              FULL="${URL}${path}"
+              echo "GET $FULL"
+
+              HTTP_CODE=$(curl -sS -o /tmp/sb_body.txt -w "%{http_code}" \
+                --connect-timeout 20 --max-time 40 \
+                -H "apikey: ${KEY}" \
+                -H "Authorization: Bearer ${KEY}" \
+                -H "Accept: application/json" \
+                "$FULL" 2>/tmp/sb_err.txt)
+              CURL_EXIT=$?
+
+              if [ $CURL_EXIT -ne 0 ]; then
+                echo "curl exit=$CURL_EXIT err=$(head -c 120 /tmp/sb_err.txt 2>/dev/null)"
+                HTTP_CODE="000"
+              fi
+
+              BODY=$(head -c 180 /tmp/sb_body.txt 2>/dev/null || true)
+              echo "HTTP $HTTP_CODE | body: $BODY"
+
+              # Projeto no ar: 200–499 (inclui 401/403/404 de RLS — ainda é atividade)
+              if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 500 ] 2>/dev/null; then
+                echo "✅ Ping OK em $path (HTTP $HTTP_CODE) — atividade registrada."
+                exit 0
+              fi
+            done
+
+            if [ $attempt -lt $MAX_ATTEMPTS ]; then
+              echo "⏳ Projeto pode estar acordando (ex.: 521). Aguardando ${SLEEP_SECS}s..."
+              sleep $SLEEP_SECS
+            fi
+          done
+
+          echo ""
+          echo "❌ Todas as tentativas falharam."
+          echo "Checklist:"
+          echo "  1. Supabase Dashboard → projeto Active (não Paused)"
+          echo "  2. Secret SUPABASE_URL = https://xxxx.supabase.co (sem barra no final)"
+          echo "  3. Secret SUPABASE_ANON_KEY = anon public key atual do projeto"
+          echo "O keep-alive não despausa o Free sozinho."
           exit 1
