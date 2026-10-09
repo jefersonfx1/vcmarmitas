@@ -5,7 +5,7 @@
  * 1) Valida área de entrega
  * 2) Resolve centroide por bairro / faixa de CEP (tabela local)
  * 3) Haversine origem → destino
- * 4) preço = clamp(base + km × tarifa, min, max)
+ * 4) preço = max(min, base + km × tarifa) — sem teto (cupons compensam depois)
  */
 
 export type AddressFromCep = {
@@ -40,7 +40,7 @@ export const FREIGHT_PRICING = {
   base: 8,
   perKm: 1.4,
   min: 10,
-  max: 35,
+  // sem teto — distância integral; cupons de frete compensam depois
 } as const;
 
 function onlyDigits(cep: string) {
@@ -78,11 +78,7 @@ function haversineKm(
 
 function priceFromKm(km: number): number {
   const raw = FREIGHT_PRICING.base + km * FREIGHT_PRICING.perKm;
-  return (
-    Math.round(
-      Math.max(FREIGHT_PRICING.min, Math.min(FREIGHT_PRICING.max, raw)) * 100
-    ) / 100
-  );
+  return Math.round(Math.max(FREIGHT_PRICING.min, raw) * 100) / 100;
 }
 
 type Region = {
@@ -187,7 +183,6 @@ const REGIONS: Region[] = [
     lat: -15.7555,
     lng: -47.8825,
     match: (n, _c, b, s) =>
-      // 707xx–708xx e SQN
       inRange(n, 70700000, 70899999) ||
       inRange(n, 70000000, 70199999) ||
       normalize(b).includes("asa norte") ||
