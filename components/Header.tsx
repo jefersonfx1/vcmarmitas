@@ -38,12 +38,10 @@ export default function Header() {
         <div className="flex items-center justify-between h-16 md:h-[4.25rem]">
           <Link
             href="/"
-            className="flex items-center gap-2.5 group font-bold text-xl tracking-tight text-primary-600 hover:text-primary-700 transition-colors"
+            className="flex items-center group"
+            aria-label="VC Marmitas — início"
           >
-            <BrandLogo size="sm" className="ring-1 ring-gray-100 shadow-sm" />
-            <span>
-              VC<span className="text-gray-900"> Marmitas</span>
-            </span>
+            <BrandLogo size="md" className="ring-1 ring-gray-100 shadow-sm" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
