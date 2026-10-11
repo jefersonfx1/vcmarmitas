@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ChefHat, MapPin, MessageCircle } from "lucide-react";
+import { MapPin, MessageCircle } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
 
 export default function Footer() {
   return (
@@ -9,13 +10,16 @@ export default function Footer() {
       <div className="relative max-w-6xl mx-auto px-4 py-14 md:py-16">
         <div className="grid md:grid-cols-4 gap-10">
           <div className="md:col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center">
-                <ChefHat className="w-5 h-5 text-white" />
+            <div className="flex items-center gap-3 mb-4">
+              <BrandLogo size="md" muted className="ring-1 ring-white/10" />
+              <div>
+                <h3 className="text-white font-bold text-lg tracking-tight leading-tight">
+                  VC Marmitas
+                </h3>
+                <p className="text-[11px] text-gray-500 tracking-wide">
+                  Vani Aguiar · Personal Chef
+                </p>
               </div>
-              <h3 className="text-white font-bold text-lg tracking-tight">
-                VC Marmitas
-              </h3>
             </div>
             <p className="text-sm text-gray-400 leading-relaxed max-w-sm mb-4">
               Marmitas congeladas práticas, saudáveis e deliciosas — feitas com o
