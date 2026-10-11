@@ -35,14 +35,21 @@ export default function Header() {
       }`}
     >
       <div className="max-w-6xl mx-auto px-4">
-        <div className="flex items-center justify-between h-16 md:h-[4.25rem]">
+        <div className="relative flex items-center justify-between h-16 md:h-[4.25rem]">
+          {/* Logo flutuante — sobressai do header e leva pra home */}
           <Link
             href="/"
-            className="flex items-center group"
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 group"
             aria-label="VC Marmitas — início"
           >
-            <BrandLogo size="md" className="ring-1 ring-gray-100 shadow-sm" />
+            <BrandLogo
+              size="lg"
+              className="rounded-xl shadow-lg shadow-black/15 ring-2 ring-white transition-transform duration-200 group-hover:scale-105 group-hover:shadow-xl group-hover:shadow-black/20"
+            />
           </Link>
+
+          {/* Espaço reservado para a logo não sobrepor o nav */}
+          <div className="w-16 md:w-20 shrink-0" aria-hidden />
 
           <nav className="hidden md:flex items-center gap-1">
             {[
