@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { kitOptions, formatPrice } from "@/lib/products";
 import KitBuilderModal from "@/components/KitBuilderModal";
+import BrandLogo from "@/components/BrandLogo";
 import type { KitOption } from "@/lib/products";
 
 const steps = [
@@ -52,8 +53,8 @@ export default function HomePage() {
 
         <div className="relative max-w-6xl mx-auto px-4 py-20 md:py-28">
           <div className="max-w-3xl mx-auto text-center">
-            <div className="animate-fade-up inline-flex items-center gap-2 bg-white/15 backdrop-blur-sm border border-white/20 rounded-full px-4 py-1.5 text-sm mb-6">
-              <ChefHat className="w-4 h-4" />
+            <div className="animate-fade-up inline-flex items-center gap-2.5 bg-white/15 backdrop-blur-sm border border-white/20 rounded-full pl-1.5 pr-4 py-1.5 text-sm mb-6">
+              <BrandLogo size="xs" className="ring-1 ring-white/20" />
               <span>Vani Aguiar · Personal Chef</span>
             </div>
 
