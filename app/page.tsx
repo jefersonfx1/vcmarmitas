@@ -43,13 +43,18 @@ export default function HomePage() {
   return (
     <div className="overflow-hidden">
       {/* Hero */}
-      <section className="relative hero-gradient text-white overflow-hidden">
-        {/* Blobs decorativos */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-24 -right-24 w-96 h-96 bg-white/10 rounded-full blur-3xl animate-pulse-soft" />
-          <div className="absolute bottom-0 -left-20 w-80 h-80 bg-primary-900/40 rounded-full blur-3xl animate-float" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-white/5 rounded-full blur-3xl animate-blob" />
-        </div>
+      <section className="relative text-white overflow-hidden">
+        {/* Background image */}
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: "url('/background.jpg')" }}
+          aria-hidden
+        />
+        {/* Overlay escuro/laranja para legibilidade do texto */}
+        <div
+          className="absolute inset-0 bg-gradient-to-br from-primary-900/80 via-primary-800/75 to-primary-950/85"
+          aria-hidden
+        />
 
         <div className="relative max-w-6xl mx-auto px-4 py-20 md:py-28">
           <div className="max-w-3xl mx-auto text-center">
@@ -58,13 +63,13 @@ export default function HomePage() {
               <span>Vani Aguiar · Personal Chef</span>
             </div>
 
-            <h1 className="animate-fade-up delay-100 text-4xl sm:text-5xl md:text-6xl font-bold mb-5 leading-[1.1] tracking-tight">
+            <h1 className="animate-fade-up delay-100 text-4xl sm:text-5xl md:text-6xl font-bold mb-5 leading-[1.1] tracking-tight drop-shadow-sm">
               Marmitas congeladas
               <br />
               <span className="text-primary-100">com sabor de casa</span>
             </h1>
 
-            <p className="animate-fade-up delay-200 text-lg md:text-xl text-primary-50/95 max-w-2xl mx-auto mb-8 leading-relaxed">
+            <p className="animate-fade-up delay-200 text-lg md:text-xl text-primary-50/95 max-w-2xl mx-auto mb-8 leading-relaxed drop-shadow-sm">
               Praticidade, equilíbrio e o carinho da chef em cada porção.
               Monte seu kit, escolha os sabores e receba pronto para aquecer.
             </p>
