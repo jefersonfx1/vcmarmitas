@@ -44,32 +44,39 @@ export default function HomePage() {
     <div className="overflow-hidden">
       {/* Hero */}
       <section className="relative text-white overflow-hidden">
-        {/* Background image */}
+        {/* Background image — sem overlay de cor */}
         <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: "url('/background.jpg')" }}
           aria-hidden
         />
-        {/* Overlay escuro/laranja para legibilidade do texto */}
-        <div
-          className="absolute inset-0 bg-gradient-to-br from-primary-900/80 via-primary-800/75 to-primary-950/85"
-          aria-hidden
-        />
 
         <div className="relative max-w-6xl mx-auto px-4 py-20 md:py-28">
           <div className="max-w-3xl mx-auto text-center">
-            <div className="animate-fade-up inline-flex items-center gap-2.5 bg-white/15 backdrop-blur-sm border border-white/20 rounded-full pl-1.5 pr-4 py-1.5 text-sm mb-6">
-              <BrandLogo size="xs" className="ring-1 ring-white/20" />
-              <span>Vani Aguiar · Personal Chef</span>
+            <div className="animate-fade-up inline-flex items-center gap-2.5 bg-black/35 backdrop-blur-md border border-white/25 rounded-full pl-1.5 pr-4 py-1.5 text-sm mb-6 shadow-lg">
+              <BrandLogo size="xs" className="ring-1 ring-white/30" />
+              <span className="drop-shadow">Vani Aguiar · Personal Chef</span>
             </div>
 
-            <h1 className="animate-fade-up delay-100 text-4xl sm:text-5xl md:text-6xl font-bold mb-5 leading-[1.1] tracking-tight drop-shadow-sm">
+            <h1
+              className="animate-fade-up delay-100 text-4xl sm:text-5xl md:text-6xl font-bold mb-5 leading-[1.1] tracking-tight"
+              style={{
+                textShadow:
+                  "0 2px 8px rgba(0,0,0,0.55), 0 4px 24px rgba(0,0,0,0.35)",
+              }}
+            >
               Marmitas congeladas
               <br />
-              <span className="text-primary-100">com sabor de casa</span>
+              <span className="text-white">com sabor de casa</span>
             </h1>
 
-            <p className="animate-fade-up delay-200 text-lg md:text-xl text-primary-50/95 max-w-2xl mx-auto mb-8 leading-relaxed drop-shadow-sm">
+            <p
+              className="animate-fade-up delay-200 text-lg md:text-xl text-white max-w-2xl mx-auto mb-8 leading-relaxed"
+              style={{
+                textShadow:
+                  "0 1px 4px rgba(0,0,0,0.6), 0 2px 12px rgba(0,0,0,0.4)",
+              }}
+            >
               Praticidade, equilíbrio e o carinho da chef em cada porção.
               Monte seu kit, escolha os sabores e receba pronto para aquecer.
             </p>
@@ -81,7 +88,10 @@ export default function HomePage() {
               </a>
               <Link
                 href="/sobre"
-                className="inline-flex items-center gap-2 text-white/90 hover:text-white font-medium px-4 py-3 transition-colors"
+                className="inline-flex items-center gap-2 text-white font-medium px-4 py-3 transition-colors hover:text-white/90"
+                style={{
+                  textShadow: "0 1px 6px rgba(0,0,0,0.55)",
+                }}
               >
                 Conheça a chef
               </Link>
@@ -89,13 +99,13 @@ export default function HomePage() {
 
             {/* Trust pills */}
             <div className="animate-fade-up delay-400 mt-12 flex flex-wrap justify-center gap-3 text-sm">
-              <span className="inline-flex items-center gap-1.5 bg-white/10 backdrop-blur-sm rounded-full px-3 py-1.5 border border-white/15">
+              <span className="inline-flex items-center gap-1.5 bg-black/35 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/20 shadow-md">
                 <Snowflake className="w-3.5 h-3.5" /> Congeladas na hora
               </span>
-              <span className="inline-flex items-center gap-1.5 bg-white/10 backdrop-blur-sm rounded-full px-3 py-1.5 border border-white/15">
+              <span className="inline-flex items-center gap-1.5 bg-black/35 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/20 shadow-md">
                 <Truck className="w-3.5 h-3.5" /> Entrega local
               </span>
-              <span className="inline-flex items-center gap-1.5 bg-white/10 backdrop-blur-sm rounded-full px-3 py-1.5 border border-white/15">
+              <span className="inline-flex items-center gap-1.5 bg-black/35 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/20 shadow-md">
                 <Gift className="w-3.5 h-3.5" /> Frete grátis a partir de R$ 349,90
               </span>
             </div>
