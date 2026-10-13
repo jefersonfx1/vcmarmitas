@@ -154,6 +154,12 @@ export default function AdminPage() {
             Sabores
           </Link>
           <Link
+            href="/admin/categorias"
+            className="text-sm font-medium text-primary-600 hover:underline"
+          >
+            Categorias
+          </Link>
+          <Link
             href="/admin/cupons"
             className="text-sm font-medium text-primary-600 hover:underline"
           >
