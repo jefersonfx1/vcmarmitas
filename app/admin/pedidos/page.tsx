@@ -133,7 +133,6 @@ function showOnBoard(order: Order) {
   return isOpenStatus(order.status);
 }
 
-/** Campainha simples via Web Audio API (sem arquivo externo) */
 function playBell() {
   try {
     const Ctx =
@@ -158,7 +157,6 @@ function playBell() {
       osc.stop(now + start + dur + 0.05);
     };
 
-    // Dois toques de campainha
     ring(880, 0, 0.25);
     ring(1175, 0.12, 0.28);
     ring(880, 0.45, 0.25);
@@ -166,99 +164,119 @@ function playBell() {
 
     setTimeout(() => ctx.close().catch(() => {}), 1500);
   } catch {
-    // silencioso se o browser bloquear áudio
+    // silencioso se o browser bloquear audio
   }
 }
 
-/** Abre janela de impressão térmica (80mm) com dados completos do pedido */
+function escapeHtml(s: string) {
+  return String(s || "")
+    .replace(/&/g, "&" + "amp;")
+    .replace(/</g, "&" + "lt;")
+    .replace(/>/g, "&" + "gt;")
+    .replace(/"/g, "&" + "quot;");
+}
+
 function printThermalReceipt(order: Order) {
   const items = order.order_items || [];
   const itemsHtml = items
     .map(
       (i) =>
-        `<tr>
-          <td style="padding:2px 0;vertical-align:top">${i.quantity}x</td>
-          <td style="padding:2px 4px;vertical-align:top">${escapeHtml(i.product_name)}</td>
-          <td style="padding:2px 0;text-align:right;vertical-align:top;white-space:nowrap">${formatPrice(Number(i.product_price) * i.quantity)}</td>
-        </tr>`
+        "<tr>" +
+        '<td style="padding:2px 0;vertical-align:top">' +
+        i.quantity +
+        "x</td>" +
+        '<td style="padding:2px 4px;vertical-align:top">' +
+        escapeHtml(i.product_name) +
+        "</td>" +
+        '<td style="padding:2px 0;text-align:right;vertical-align:top;white-space:nowrap">' +
+        formatPrice(Number(i.product_price) * i.quantity) +
+        "</td>" +
+        "</tr>"
     )
     .join("");
 
   const complement = order.address_complement
-    ? `, ${escapeHtml(order.address_complement)}`
+    ? ", " + escapeHtml(order.address_complement)
     : "";
   const neighborhood = order.address_neighborhood
-    ? `<div>Bairro: ${escapeHtml(order.address_neighborhood)}</div>`
+    ? "<div>Bairro: " + escapeHtml(order.address_neighborhood) + "</div>"
     : "";
   const city = order.address_city
-    ? `<div>Cidade: ${escapeHtml(order.address_city)}</div>`
+    ? "<div>Cidade: " + escapeHtml(order.address_city) + "</div>"
     : "";
   const notes = order.notes
-    ? `<div style="margin-top:8px;border-top:1px dashed #000;padding-top:6px"><strong>OBS:</strong> ${escapeHtml(order.notes)}</div>`
+    ? '<div style="margin-top:8px;border-top:1px dashed #000;padding-top:6px"><strong>OBS:</strong> ' +
+      escapeHtml(order.notes) +
+      "</div>"
     : "";
 
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Pedido ${order.id.slice(0, 8)}</title>
-  <style>
-    @page { size: 80mm auto; margin: 2mm; }
-    * { box-sizing: border-box; }
-    body {
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 12px;
-      width: 72mm;
-      margin: 0 auto;
-      padding: 4px;
-      color: #000;
-      line-height: 1.35;
-    }
-    h1 { font-size: 15px; text-align: center; margin: 0 0 4px; }
-    .sub { text-align: center; font-size: 11px; margin-bottom: 8px; }
-    hr { border: none; border-top: 1px dashed #000; margin: 8px 0; }
-    table { width: 100%; border-collapse: collapse; }
-    .right { text-align: right; }
-    .bold { font-weight: bold; }
-    .total { font-size: 14px; font-weight: bold; }
-    .footer { text-align: center; margin-top: 10px; font-size: 10px; }
-  </style>
-</head>
-<body>
-  <h1>VC MARMITAS</h1>
-  <div class="sub">Vani Aguiar · Personal Chef</div>
-  <hr />
-  <div><strong>Pedido:</strong> ${escapeHtml(order.id.slice(0, 8).toUpperCase())}</div>
-  <div><strong>Data:</strong> ${escapeHtml(formatDate(order.created_at))}</div>
-  <hr />
-  <div class="bold">CLIENTE</div>
-  <div>${escapeHtml(order.customer_name || "—")}</div>
-  <div>Tel: ${escapeHtml(order.customer_phone || "—")}</div>
-  ${order.customer_email ? `<div>E-mail: ${escapeHtml(order.customer_email)}</div>` : ""}
-  ${order.customer_cpf ? `<div>CPF: ${escapeHtml(order.customer_cpf)}</div>` : ""}
-  <hr />
-  <div class="bold">ENTREGA</div>
-  <div>${escapeHtml(order.address_street || "")}, ${escapeHtml(order.address_number || "")}${complement}</div>
-  ${neighborhood}
-  ${city}
-  <div>CEP: ${escapeHtml(order.address_cep || "—")}</div>
-  <hr />
-  <div class="bold">ITENS</div>
-  <table>${itemsHtml}</table>
-  <hr />
-  ${order.freight != null ? `<div class="right">Frete: ${formatPrice(Number(order.freight))}</div>` : ""}
-  <div class="right total">TOTAL: ${formatPrice(Number(order.total))}</div>
-  ${notes}
-  <hr />
-  <div class="footer">Obrigado pela preferência!<br/>Aquecer e aproveitar 🍽️</div>
-  <script>
-    window.onload = function () {
-      window.print();
-      setTimeout(function () { window.close(); }, 400);
-    };
-  </script>
-</body>
-</html>`;
+  const html =
+    "<!DOCTYPE html><html><head><meta charset=\"utf-8\" />" +
+    "<title>Pedido " +
+    order.id.slice(0, 8) +
+    "</title><style>" +
+    "@page { size: 80mm auto; margin: 2mm; }" +
+    "* { box-sizing: border-box; }" +
+    "body { font-family: 'Courier New', Courier, monospace; font-size: 12px; width: 72mm; margin: 0 auto; padding: 4px; color: #000; line-height: 1.35; }" +
+    "h1 { font-size: 15px; text-align: center; margin: 0 0 4px; }" +
+    ".sub { text-align: center; font-size: 11px; margin-bottom: 8px; }" +
+    "hr { border: none; border-top: 1px dashed #000; margin: 8px 0; }" +
+    "table { width: 100%; border-collapse: collapse; }" +
+    ".right { text-align: right; }" +
+    ".bold { font-weight: bold; }" +
+    ".total { font-size: 14px; font-weight: bold; }" +
+    ".footer { text-align: center; margin-top: 10px; font-size: 10px; }" +
+    "</style></head><body>" +
+    "<h1>VC MARMITAS</h1>" +
+    '<div class="sub">Vani Aguiar · Personal Chef</div><hr />' +
+    "<div><strong>Pedido:</strong> " +
+    escapeHtml(order.id.slice(0, 8).toUpperCase()) +
+    "</div>" +
+    "<div><strong>Data:</strong> " +
+    escapeHtml(formatDate(order.created_at)) +
+    "</div><hr />" +
+    '<div class="bold">CLIENTE</div>' +
+    "<div>" +
+    escapeHtml(order.customer_name || "-") +
+    "</div>" +
+    "<div>Tel: " +
+    escapeHtml(order.customer_phone || "-") +
+    "</div>" +
+    (order.customer_email
+      ? "<div>E-mail: " + escapeHtml(order.customer_email) + "</div>"
+      : "") +
+    (order.customer_cpf
+      ? "<div>CPF: " + escapeHtml(order.customer_cpf) + "</div>"
+      : "") +
+    "<hr />" +
+    '<div class="bold">ENTREGA</div>' +
+    "<div>" +
+    escapeHtml(order.address_street || "") +
+    ", " +
+    escapeHtml(order.address_number || "") +
+    complement +
+    "</div>" +
+    neighborhood +
+    city +
+    "<div>CEP: " +
+    escapeHtml(order.address_cep || "-") +
+    "</div><hr />" +
+    '<div class="bold">ITENS</div><table>' +
+    itemsHtml +
+    "</table><hr />" +
+    (order.freight != null
+      ? '<div class="right">Frete: ' +
+        formatPrice(Number(order.freight)) +
+        "</div>"
+      : "") +
+    '<div class="right total">TOTAL: ' +
+    formatPrice(Number(order.total)) +
+    "</div>" +
+    notes +
+    "<hr />" +
+    '<div class="footer">Obrigado pela preferencia!<br/>Aquecer e aproveitar</div>' +
+    "<script>window.onload=function(){window.print();setTimeout(function(){window.close();},400);};</script>" +
+    "</body></html>";
 
   const win = window.open("", "_blank", "width=320,height=600");
   if (!win) {
@@ -269,14 +287,6 @@ function printThermalReceipt(order: Order) {
   win.document.write(html);
   win.document.close();
   return true;
-}
-
-function escapeHtml(s: string) {
-  return String(s || "")
-    .replace(/&/g, "&")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/"/g, """);
 }
 
 const TABS: { id: TabId; label: string }[] = [
@@ -520,7 +530,6 @@ export default function AdminPedidosPage() {
       if (!res.ok) throw new Error(data.error || "Erro ao carregar");
       const list: Order[] = data.orders || [];
 
-      // Detecta novos pedidos (campainha só na aba Operação)
       if (knownIdsRef.current === null) {
         knownIdsRef.current = new Set(list.map((o) => o.id));
       } else {
@@ -552,7 +561,6 @@ export default function AdminPedidosPage() {
     loadOrders();
   }, [loadOrders]);
 
-  // Poll a cada 20s enquanto a página estiver aberta
   useEffect(() => {
     const id = setInterval(() => {
       loadOrders({ silent: true });
@@ -580,7 +588,6 @@ export default function AdminPedidosPage() {
   async function handlePrint(order: Order) {
     const ok = printThermalReceipt(order);
     if (!ok) return;
-    // Ao imprimir, vai automaticamente para Em produção
     if (order.status !== "preparando") {
       await updateStatus(order.id, "preparando");
     }
