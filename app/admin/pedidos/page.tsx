@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Package,
   Clock,
   CheckCircle,
   XCircle,
@@ -13,6 +12,10 @@ import {
   ArrowLeft,
   ChefHat,
   Inbox,
+  Printer,
+  MoreVertical,
+  Bell,
+  BellOff,
 } from "lucide-react";
 
 type OrderStatus =
@@ -35,11 +38,18 @@ type Order = {
   customer_name: string;
   customer_phone: string;
   customer_email: string;
+  customer_cpf?: string | null;
   total: number;
   status: OrderStatus;
   address_street: string;
   address_number: string;
+  address_complement?: string | null;
+  address_neighborhood?: string | null;
+  address_city?: string | null;
   address_cep: string;
+  notes?: string | null;
+  freight?: number | null;
+  subtotal?: number | null;
   created_at: string;
   order_items: OrderItem[];
 };
@@ -51,7 +61,14 @@ type TabId =
   | "cancelados"
   | "todos";
 
-const HOURS_48 = 48 * 60 * 60 * 1000;
+const ALL_STATUSES: { value: OrderStatus; label: string }[] = [
+  { value: "pendente", label: "Pendente (Recebidos)" },
+  { value: "confirmado", label: "Confirmado (Recebidos)" },
+  { value: "preparando", label: "Em produção" },
+  { value: "enviado", label: "Em entrega" },
+  { value: "entregue", label: "Finalizado" },
+  { value: "cancelado", label: "Cancelado" },
+];
 
 const statusConfig: Record<
   OrderStatus,
@@ -90,7 +107,7 @@ const statusConfig: Record<
 };
 
 function formatPrice(value: number) {
-  return Number(value).toLocaleString("pt-BR", {
+  return Number(value || 0).toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
   });
@@ -106,19 +123,160 @@ function formatDate(iso: string) {
   });
 }
 
-function isWithin48h(iso: string) {
-  return Date.now() - new Date(iso).getTime() <= HOURS_48;
-}
-
 function isOpenStatus(status: OrderStatus) {
-  return status === "pendente" || status === "confirmado" || status === "preparando";
+  return (
+    status === "pendente" || status === "confirmado" || status === "preparando"
+  );
 }
 
-/** No workflow: abertos sempre; fechados nunca (ficam nas outras abas). */
 function showOnBoard(order: Order) {
-  if (!isOpenStatus(order.status)) return false;
-  // Abertos > 48h continuam no board até finalizar/cancelar
+  return isOpenStatus(order.status);
+}
+
+/** Campainha simples via Web Audio API (sem arquivo externo) */
+function playBell() {
+  try {
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+
+    const ring = (freq: number, start: number, dur: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now + start);
+      gain.gain.setValueAtTime(0.0001, now + start);
+      gain.gain.exponentialRampToValueAtTime(0.35, now + start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + start);
+      osc.stop(now + start + dur + 0.05);
+    };
+
+    // Dois toques de campainha
+    ring(880, 0, 0.25);
+    ring(1175, 0.12, 0.28);
+    ring(880, 0.45, 0.25);
+    ring(1175, 0.57, 0.3);
+
+    setTimeout(() => ctx.close().catch(() => {}), 1500);
+  } catch {
+    // silencioso se o browser bloquear áudio
+  }
+}
+
+/** Abre janela de impressão térmica (80mm) com dados completos do pedido */
+function printThermalReceipt(order: Order) {
+  const items = order.order_items || [];
+  const itemsHtml = items
+    .map(
+      (i) =>
+        `<tr>
+          <td style="padding:2px 0;vertical-align:top">${i.quantity}x</td>
+          <td style="padding:2px 4px;vertical-align:top">${escapeHtml(i.product_name)}</td>
+          <td style="padding:2px 0;text-align:right;vertical-align:top;white-space:nowrap">${formatPrice(Number(i.product_price) * i.quantity)}</td>
+        </tr>`
+    )
+    .join("");
+
+  const complement = order.address_complement
+    ? `, ${escapeHtml(order.address_complement)}`
+    : "";
+  const neighborhood = order.address_neighborhood
+    ? `<div>Bairro: ${escapeHtml(order.address_neighborhood)}</div>`
+    : "";
+  const city = order.address_city
+    ? `<div>Cidade: ${escapeHtml(order.address_city)}</div>`
+    : "";
+  const notes = order.notes
+    ? `<div style="margin-top:8px;border-top:1px dashed #000;padding-top:6px"><strong>OBS:</strong> ${escapeHtml(order.notes)}</div>`
+    : "";
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Pedido ${order.id.slice(0, 8)}</title>
+  <style>
+    @page { size: 80mm auto; margin: 2mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      width: 72mm;
+      margin: 0 auto;
+      padding: 4px;
+      color: #000;
+      line-height: 1.35;
+    }
+    h1 { font-size: 15px; text-align: center; margin: 0 0 4px; }
+    .sub { text-align: center; font-size: 11px; margin-bottom: 8px; }
+    hr { border: none; border-top: 1px dashed #000; margin: 8px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    .right { text-align: right; }
+    .bold { font-weight: bold; }
+    .total { font-size: 14px; font-weight: bold; }
+    .footer { text-align: center; margin-top: 10px; font-size: 10px; }
+  </style>
+</head>
+<body>
+  <h1>VC MARMITAS</h1>
+  <div class="sub">Vani Aguiar · Personal Chef</div>
+  <hr />
+  <div><strong>Pedido:</strong> ${escapeHtml(order.id.slice(0, 8).toUpperCase())}</div>
+  <div><strong>Data:</strong> ${escapeHtml(formatDate(order.created_at))}</div>
+  <hr />
+  <div class="bold">CLIENTE</div>
+  <div>${escapeHtml(order.customer_name || "—")}</div>
+  <div>Tel: ${escapeHtml(order.customer_phone || "—")}</div>
+  ${order.customer_email ? `<div>E-mail: ${escapeHtml(order.customer_email)}</div>` : ""}
+  ${order.customer_cpf ? `<div>CPF: ${escapeHtml(order.customer_cpf)}</div>` : ""}
+  <hr />
+  <div class="bold">ENTREGA</div>
+  <div>${escapeHtml(order.address_street || "")}, ${escapeHtml(order.address_number || "")}${complement}</div>
+  ${neighborhood}
+  ${city}
+  <div>CEP: ${escapeHtml(order.address_cep || "—")}</div>
+  <hr />
+  <div class="bold">ITENS</div>
+  <table>${itemsHtml}</table>
+  <hr />
+  ${order.freight != null ? `<div class="right">Frete: ${formatPrice(Number(order.freight))}</div>` : ""}
+  <div class="right total">TOTAL: ${formatPrice(Number(order.total))}</div>
+  ${notes}
+  <hr />
+  <div class="footer">Obrigado pela preferência!<br/>Aquecer e aproveitar 🍽️</div>
+  <script>
+    window.onload = function () {
+      window.print();
+      setTimeout(function () { window.close(); }, 400);
+    };
+  </script>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=320,height=600");
+  if (!win) {
+    alert("Permita pop-ups para imprimir o pedido.");
+    return false;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
   return true;
+}
+
+function escapeHtml(s: string) {
+  return String(s || "")
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/"/g, """);
 }
 
 const TABS: { id: TabId; label: string }[] = [
@@ -129,39 +287,88 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "todos", label: "Todos os pedidos" },
 ];
 
-function OrderCard({
+function StatusMenu({
   order,
   onStatus,
-  compact,
 }: {
   order: Order;
   onStatus: (id: string, status: OrderStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+        aria-label="Alterar status"
+        title="Mover para..."
+      >
+        <MoreVertical className="w-4 h-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-8 z-20 w-52 bg-white border border-gray-200 rounded-xl shadow-lg py-1">
+          <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+            Mover para
+          </p>
+          {ALL_STATUSES.map((s) => (
+            <button
+              key={s.value}
+              type="button"
+              disabled={order.status === s.value}
+              onClick={() => {
+                onStatus(order.id, s.value);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-default ${
+                order.status === s.value
+                  ? "font-semibold text-primary-700"
+                  : "text-gray-700"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderCard({
+  order,
+  onStatus,
+  onPrint,
+  compact,
+  showPrint,
+}: {
+  order: Order;
+  onStatus: (id: string, status: OrderStatus) => void;
+  onPrint: (order: Order) => void;
   compact?: boolean;
+  showPrint?: boolean;
 }) {
   const config = statusConfig[order.status] || statusConfig.pendente;
   const itemsText = (order.order_items || [])
     .map((i) => `${i.quantity}x ${i.product_name}`)
     .join(", ");
 
-  const nextActions: { status: OrderStatus; label: string }[] = [];
-  if (order.status === "pendente") {
-    nextActions.push({ status: "confirmado", label: "Confirmar" });
-    nextActions.push({ status: "preparando", label: "Produção" });
-  } else if (order.status === "confirmado") {
-    nextActions.push({ status: "preparando", label: "Produção" });
-  } else if (order.status === "preparando") {
-    nextActions.push({ status: "enviado", label: "Saiu p/ entrega" });
-  } else if (order.status === "enviado") {
-    nextActions.push({ status: "entregue", label: "Finalizar" });
-  }
-  if (order.status !== "entregue" && order.status !== "cancelado") {
-    nextActions.push({ status: "cancelado", label: "Cancelar" });
-  }
-
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm relative">
       <div className="flex items-start justify-between gap-2 mb-2">
-        <div>
+        <div className="min-w-0">
           <p className="font-semibold text-gray-900 text-sm leading-tight">
             {order.customer_name}
           </p>
@@ -169,12 +376,15 @@ function OrderCard({
             {order.id.slice(0, 8)}… · {formatDate(order.created_at)}
           </p>
         </div>
-        <span
-          className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0 ${config.color}`}
-        >
-          {config.icon}
-          {config.label}
-        </span>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span
+            className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${config.color}`}
+          >
+            {config.icon}
+            {config.label}
+          </span>
+          <StatusMenu order={order} onStatus={onStatus} />
+        </div>
       </div>
 
       {!compact && (
@@ -185,7 +395,12 @@ function OrderCard({
           </p>
           <p className="line-clamp-2">
             <span className="text-gray-400">End.:</span>{" "}
-            {order.address_street}, {order.address_number} — {order.address_cep}
+            {order.address_street}, {order.address_number}
+            {order.address_complement ? `, ${order.address_complement}` : ""}
+            {order.address_neighborhood
+              ? ` — ${order.address_neighborhood}`
+              : ""}{" "}
+            — CEP {order.address_cep}
           </p>
           <p className="line-clamp-2">
             <span className="text-gray-400">Itens:</span> {itemsText || "—"}
@@ -194,45 +409,47 @@ function OrderCard({
       )}
 
       {compact && (
-        <p className="text-xs text-gray-500 line-clamp-2 mb-2">{itemsText || "—"}</p>
+        <p className="text-xs text-gray-500 line-clamp-2 mb-2">
+          {itemsText || "—"}
+        </p>
       )}
 
       <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-50">
         <span className="font-bold text-primary-600 text-sm">
           {formatPrice(order.total)}
         </span>
-        <div className="flex flex-wrap gap-1 justify-end">
-          {nextActions.map((a) => (
-            <button
-              key={a.status}
-              type="button"
-              onClick={() => onStatus(order.id, a.status)}
-              className={`text-[11px] font-medium px-2 py-1 rounded-lg border transition-colors ${
-                a.status === "cancelado"
-                  ? "border-red-200 text-red-600 hover:bg-red-50"
-                  : "border-primary-200 text-primary-700 hover:bg-primary-50"
-              }`}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {!compact && (
-        <select
-          value={order.status}
-          onChange={(e) => onStatus(order.id, e.target.value as OrderStatus)}
-          className="mt-2 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-        >
-          <option value="pendente">Pendente</option>
-          <option value="confirmado">Confirmado</option>
-          <option value="preparando">Em produção</option>
-          <option value="enviado">Em entrega</option>
-          <option value="entregue">Finalizado</option>
-          <option value="cancelado">Cancelado</option>
-        </select>
-      )}
+        {showPrint && (
+          <button
+            type="button"
+            onClick={() => onPrint(order)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            Imprimir
+          </button>
+        )}
+
+        {!showPrint && order.status === "preparando" && (
+          <button
+            type="button"
+            onClick={() => onStatus(order.id, "enviado")}
+            className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-primary-200 text-primary-700 hover:bg-primary-50"
+          >
+            Saiu p/ entrega
+          </button>
+        )}
+
+        {!showPrint && order.status === "enviado" && (
+          <button
+            type="button"
+            onClick={() => onStatus(order.id, "entregue")}
+            className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-green-200 text-green-700 hover:bg-green-50"
+          >
+            Finalizar
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -261,7 +478,9 @@ function Column({
           {count}
         </span>
       </div>
-      <div className="p-3 space-y-3 flex-1 overflow-y-auto max-h-[70vh]">{children}</div>
+      <div className="p-3 space-y-3 flex-1 overflow-y-auto max-h-[70vh]">
+        {children}
+      </div>
     </div>
   );
 }
@@ -270,29 +489,75 @@ export default function AdminPedidosPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [tab, setTab] = useState<TabId>("operacao");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | "todos">("todos");
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | "todos">(
+    "todos"
+  );
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [soundOn, setSoundOn] = useState(true);
 
-  const loadOrders = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const knownIdsRef = useRef<Set<string> | null>(null);
+  const tabRef = useRef(tab);
+  const soundRef = useRef(soundOn);
+
+  useEffect(() => {
+    tabRef.current = tab;
+  }, [tab]);
+  useEffect(() => {
+    soundRef.current = soundOn;
+  }, [soundOn]);
+
+  const loadOrders = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const res = await fetch("/api/orders");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao carregar");
-      setOrders(data.orders || []);
+      const list: Order[] = data.orders || [];
+
+      // Detecta novos pedidos (campainha só na aba Operação)
+      if (knownIdsRef.current === null) {
+        knownIdsRef.current = new Set(list.map((o) => o.id));
+      } else {
+        const prev = knownIdsRef.current;
+        const newcomers = list.filter((o) => !prev.has(o.id));
+        if (
+          newcomers.length > 0 &&
+          soundRef.current &&
+          tabRef.current === "operacao"
+        ) {
+          playBell();
+        }
+        knownIdsRef.current = new Set(list.map((o) => o.id));
+      }
+
+      setOrders(list);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar pedidos");
+      if (!opts?.silent) {
+        setError(
+          err instanceof Error ? err.message : "Erro ao carregar pedidos"
+        );
+      }
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadOrders();
+  }, [loadOrders]);
+
+  // Poll a cada 20s enquanto a página estiver aberta
+  useEffect(() => {
+    const id = setInterval(() => {
+      loadOrders({ silent: true });
+    }, 20000);
+    return () => clearInterval(id);
   }, [loadOrders]);
 
   async function updateStatus(id: string, status: OrderStatus) {
@@ -312,6 +577,15 @@ export default function AdminPedidosPage() {
     }
   }
 
+  async function handlePrint(order: Order) {
+    const ok = printThermalReceipt(order);
+    if (!ok) return;
+    // Ao imprimir, vai automaticamente para Em produção
+    if (order.status !== "preparando") {
+      await updateStatus(order.id, "preparando");
+    }
+  }
+
   const boardRecebidos = useMemo(
     () =>
       orders.filter(
@@ -328,10 +602,7 @@ export default function AdminPedidosPage() {
   );
 
   const entrega = useMemo(
-    () =>
-      orders.filter(
-        (o) => o.status === "enviado" && (isWithin48h(o.created_at) || true)
-      ),
+    () => orders.filter((o) => o.status === "enviado"),
     [orders]
   );
 
@@ -356,7 +627,8 @@ export default function AdminPedidosPage() {
         o.id.toLowerCase().includes(q) ||
         (o.customer_phone || "").includes(search);
       const t = new Date(o.created_at).getTime();
-      const matchFrom = !dateFrom || t >= new Date(dateFrom).setHours(0, 0, 0, 0);
+      const matchFrom =
+        !dateFrom || t >= new Date(dateFrom).setHours(0, 0, 0, 0);
       const matchTo =
         !dateTo || t <= new Date(dateTo).setHours(23, 59, 59, 999);
       return matchStatus && matchSearch && matchFrom && matchTo;
@@ -376,19 +648,37 @@ export default function AdminPedidosPage() {
           </Link>
           <h1 className="text-2xl font-bold text-gray-900">Pedidos</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Operação do dia · pedidos abertos ficam no quadro até finalizar
+            Imprima o cupom → o pedido vai para produção automaticamente
           </p>
         </div>
-        <button
-          onClick={loadOrders}
-          className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-primary-600 self-start"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Atualizar
-        </button>
+        <div className="flex items-center gap-3 self-start">
+          <button
+            type="button"
+            onClick={() => setSoundOn((v) => !v)}
+            className={`inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border ${
+              soundOn
+                ? "border-primary-200 text-primary-700 bg-primary-50"
+                : "border-gray-200 text-gray-500"
+            }`}
+            title={soundOn ? "Som ligado" : "Som desligado"}
+          >
+            {soundOn ? (
+              <Bell className="w-4 h-4" />
+            ) : (
+              <BellOff className="w-4 h-4" />
+            )}
+            {soundOn ? "Campainha on" : "Campainha off"}
+          </button>
+          <button
+            onClick={() => loadOrders()}
+            className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-primary-600"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Atualizar
+          </button>
+        </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 overflow-x-auto pb-1 mb-6 border-b border-gray-200">
         {TABS.map((t) => (
           <button
@@ -425,7 +715,14 @@ export default function AdminPedidosPage() {
               </p>
             )}
             {boardRecebidos.map((o) => (
-              <OrderCard key={o.id} order={o} onStatus={updateStatus} compact />
+              <OrderCard
+                key={o.id}
+                order={o}
+                onStatus={updateStatus}
+                onPrint={handlePrint}
+                compact
+                showPrint
+              />
             ))}
           </Column>
           <Column
@@ -440,7 +737,13 @@ export default function AdminPedidosPage() {
               </p>
             )}
             {boardProducao.map((o) => (
-              <OrderCard key={o.id} order={o} onStatus={updateStatus} compact />
+              <OrderCard
+                key={o.id}
+                order={o}
+                onStatus={updateStatus}
+                onPrint={handlePrint}
+                compact
+              />
             ))}
           </Column>
         </div>
@@ -454,7 +757,12 @@ export default function AdminPedidosPage() {
             </p>
           )}
           {entrega.map((o) => (
-            <OrderCard key={o.id} order={o} onStatus={updateStatus} />
+            <OrderCard
+              key={o.id}
+              order={o}
+              onStatus={updateStatus}
+              onPrint={handlePrint}
+            />
           ))}
         </div>
       )}
@@ -467,7 +775,12 @@ export default function AdminPedidosPage() {
             </p>
           )}
           {finalizados.map((o) => (
-            <OrderCard key={o.id} order={o} onStatus={updateStatus} />
+            <OrderCard
+              key={o.id}
+              order={o}
+              onStatus={updateStatus}
+              onPrint={handlePrint}
+            />
           ))}
         </div>
       )}
@@ -480,7 +793,12 @@ export default function AdminPedidosPage() {
             </p>
           )}
           {cancelados.map((o) => (
-            <OrderCard key={o.id} order={o} onStatus={updateStatus} />
+            <OrderCard
+              key={o.id}
+              order={o}
+              onStatus={updateStatus}
+              onPrint={handlePrint}
+            />
           ))}
         </div>
       )}
@@ -531,7 +849,13 @@ export default function AdminPedidosPage() {
 
           <div className="space-y-3">
             {todosFiltered.map((o) => (
-              <OrderCard key={o.id} order={o} onStatus={updateStatus} />
+              <OrderCard
+                key={o.id}
+                order={o}
+                onStatus={updateStatus}
+                onPrint={handlePrint}
+                showPrint={o.status === "pendente" || o.status === "confirmado"}
+              />
             ))}
             {todosFiltered.length === 0 && (
               <p className="text-center text-gray-500 py-12">
@@ -543,10 +867,11 @@ export default function AdminPedidosPage() {
       )}
 
       {!loading && !error && tab === "operacao" && (
-        <p className="text-center text-xs text-gray-400 mt-6">
-          Pedidos abertos permanecem no quadro até serem finalizados ou
-          cancelados (mesmo após 48h). Entrega, finalizados e cancelados ficam
-          nas abas ao lado.
+        <p className="text-center text-xs text-gray-400 mt-6 max-w-xl mx-auto">
+          <strong>Imprimir</strong> envia o cupom térmico e move o pedido para{" "}
+          <em>Em produção</em>. Use os <strong>⋮</strong> para mudar o status a
+          qualquer momento. A campainha toca a cada novo pedido (atualiza a cada
+          20s) com a aba Operação aberta.
         </p>
       )}
     </div>
