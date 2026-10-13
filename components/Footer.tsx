@@ -3,6 +3,10 @@ import { MapPin, MessageCircle } from "lucide-react";
 import BrandLogo from "@/components/BrandLogo";
 
 const WHATSAPP = "5561982551871";
+const WHATSAPP_MSG = encodeURIComponent(
+  "Olá! Venho do site e tenho dúvidas sobre os produtos."
+);
+const WHATSAPP_URL = `https://wa.me/${WHATSAPP}?text=${WHATSAPP_MSG}`;
 
 export default function Footer() {
   return (
@@ -69,7 +73,7 @@ export default function Footer() {
               Dúvidas ou suporte? Fale com a gente no WhatsApp.
             </p>
             <a
-              href={`https://wa.me/${WHATSAPP}`}
+              href={WHATSAPP_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm font-medium text-primary-400 hover:text-primary-300 transition-colors"
