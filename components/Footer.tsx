@@ -2,6 +2,8 @@ import Link from "next/link";
 import { MapPin, MessageCircle } from "lucide-react";
 import BrandLogo from "@/components/BrandLogo";
 
+const WHATSAPP = "5561982551871";
+
 export default function Footer() {
   return (
     <footer className="bg-gray-950 text-gray-300 relative overflow-hidden">
@@ -64,10 +66,10 @@ export default function Footer() {
               Contato
             </h4>
             <p className="text-sm text-gray-400 mb-3 leading-relaxed">
-              Dúvidas ou pedidos especiais? Fale com a gente no WhatsApp.
+              Dúvidas ou suporte? Fale com a gente no WhatsApp.
             </p>
             <a
-              href="https://wa.me/5561999999999"
+              href={`https://wa.me/${WHATSAPP}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm font-medium text-primary-400 hover:text-primary-300 transition-colors"
@@ -75,9 +77,7 @@ export default function Footer() {
               <MessageCircle className="w-4 h-4" />
               Abrir WhatsApp
             </a>
-            <p className="text-[11px] text-gray-600 mt-2">
-              (Atualize o número no Footer quando tiver o oficial)
-            </p>
+            <p className="text-[11px] text-gray-500 mt-2">(61) 98255-1871</p>
           </div>
         </div>
 
