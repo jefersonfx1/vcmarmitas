@@ -20,9 +20,8 @@ export default function SobrePage() {
         </p>
 
         <p>
-          Nosso cardápio inclui opções tradicionais, fitness e vegetarianas,
-          pensadas para quem busca praticidade sem abrir mão do sabor e da
-          qualidade.
+          Nosso cardápio inclui uma grande variedade de opções, pensadas para quem
+          busca praticidade sem abrir mão do sabor e da qualidade.
         </p>
 
         <p>
